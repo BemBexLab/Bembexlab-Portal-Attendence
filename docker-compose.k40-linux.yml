@@ -1,0 +1,14 @@
+# Linux-only override for deployments where the API container must talk to a
+# ZKTeco device on the host/LAN network. Docker Desktop on Windows/macOS does
+# not provide the same host networking behavior.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.k40-linux.yml up -d --build
+services:
+  server:
+    network_mode: host
+    ports: !reset []
+    environment:
+      DATABASE_URL: postgresql://bembex:bembex_password@127.0.0.1:5432/bembex?schema=public
+      DIRECT_URL: postgresql://bembex:bembex_password@127.0.0.1:5432/bembex?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
