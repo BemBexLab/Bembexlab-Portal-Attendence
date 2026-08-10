@@ -11,8 +11,10 @@ import {
 } from './types/attendance-processing.types';
 import {
   dateKeyToDatabaseDate,
-  getDateKeyInTimeZone,
+  getNightShiftDateKey,
   getLooseUtcWindowForDateKey,
+  getPakistanShiftEnd,
+  getTimePartsInTimeZone,
 } from './utils/timezone';
 
 type AffectedAttendanceDay = {
@@ -21,6 +23,10 @@ type AffectedAttendanceDay = {
   dateKey: string;
   timezone: string;
 };
+
+const SHIFT_START_MINUTES = 21 * 60;
+const ON_TIME_DEADLINE_MINUTES = 21 * 60 + 15;
+const SHIFT_END_MINUTES = 6 * 60;
 
 @Injectable()
 export class AttendanceProcessingService {
@@ -90,6 +96,43 @@ export class AttendanceProcessingService {
     const timezone = device.organization.timezone || 'UTC';
 
     try {
+      const deviceUsers = await this.zktecoService.getUsers(device);
+
+      for (const deviceUser of deviceUsers) {
+        const existing = await this.prisma.employee.findUnique({
+          where: {
+            organizationId_deviceUserId: {
+              organizationId: device.organizationId,
+              deviceUserId: deviceUser.deviceUserId,
+            },
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+
+        if (existing) {
+          if (deviceUser.name && existing.name !== deviceUser.name) {
+            await this.prisma.employee.update({
+              where: { id: existing.id },
+              data: { name: deviceUser.name },
+            });
+          }
+          continue;
+        }
+
+        await this.prisma.employee.create({
+          data: {
+            organizationId: device.organizationId,
+            employeeCode: `ZKT-${deviceUser.deviceUserId}`,
+            deviceUserId: deviceUser.deviceUserId,
+            name: deviceUser.name ?? `K40 User ${deviceUser.deviceUserId}`,
+            isActive: true,
+          },
+        });
+      }
+
       const punches = await this.zktecoService.getAttendancePunches(device);
       const deviceUserIds = Array.from(
         new Set(punches.map((punch) => punch.deviceUserId)),
@@ -119,7 +162,23 @@ export class AttendanceProcessingService {
           return [];
         }
 
-        const dateKey = getDateKeyInTimeZone(punch.punchTime, timezone);
+        const punchTime = getTimePartsInTimeZone(punch.punchTime, timezone);
+        const punchMinutes = punchTime.hour * 60 + punchTime.minute;
+
+        if (
+          punchMinutes < SHIFT_START_MINUTES &&
+          punchMinutes > SHIFT_END_MINUTES
+        ) {
+          return {
+            organizationId: device.organizationId,
+            employeeId,
+            deviceId: device.id,
+            punchTime: punch.punchTime,
+            verificationType: punch.verificationType,
+          };
+        }
+
+        const dateKey = getNightShiftDateKey(punch.punchTime, timezone);
         affectedDays.set(`${employeeId}:${dateKey}`, {
           employeeId,
           organizationId: device.organizationId,
@@ -237,10 +296,24 @@ export class AttendanceProcessingService {
         punchTime: 'asc',
       },
     });
-    const dayLogs = logs.filter(
-      (log) =>
-        getDateKeyInTimeZone(log.punchTime, day.timezone) === day.dateKey,
-    );
+    const dayLogs = logs.filter((log) => {
+      if (getNightShiftDateKey(log.punchTime, day.timezone) !== day.dateKey) {
+        return false;
+      }
+
+      const time = getTimePartsInTimeZone(log.punchTime, day.timezone);
+      const minutes = time.hour * 60 + time.minute;
+      return minutes >= SHIFT_START_MINUTES || minutes <= SHIFT_END_MINUTES;
+    });
+    const existing = await this.prisma.dailyAttendance.findUnique({
+      where: {
+        employeeId_date: {
+          employeeId: day.employeeId,
+          date: dateKeyToDatabaseDate(day.dateKey),
+        },
+      },
+      select: { statusOverride: true },
+    });
     const firstCheckIn = dayLogs[0]?.punchTime ?? null;
     const lastPunch = dayLogs[dayLogs.length - 1]?.punchTime ?? null;
     const lastCheckOut =
@@ -249,20 +322,43 @@ export class AttendanceProcessingService {
       lastPunch.getTime() !== firstCheckIn.getTime()
         ? lastPunch
         : null;
+    const arrivalTime = firstCheckIn
+      ? getTimePartsInTimeZone(firstCheckIn, day.timezone)
+      : null;
+    const arrivalMinutes = arrivalTime
+      ? arrivalTime.hour * 60 +
+        arrivalTime.minute +
+        (arrivalTime.hour <= 6 ? 24 * 60 : 0)
+      : null;
+    const arrivedAfterDeadline =
+      arrivalMinutes !== null && arrivalMinutes > ON_TIME_DEADLINE_MINUTES;
+    const status = firstCheckIn
+      ? arrivedAfterDeadline
+        ? AttendanceStatus.HALF_DAY
+        : lastCheckOut
+          ? AttendanceStatus.PRESENT
+          : AttendanceStatus.MISSING_CHECKOUT
+      : AttendanceStatus.ABSENT;
+    const effectiveStatus = existing?.statusOverride ?? status;
+    const shiftEnd = getPakistanShiftEnd(day.dateKey);
+    const automaticCheckoutStatuses = new Set<AttendanceStatus>([
+      AttendanceStatus.PRESENT,
+      AttendanceStatus.HALF_DAY,
+    ]);
+    const finalCheckOut =
+      Date.now() >= shiftEnd.getTime() &&
+      automaticCheckoutStatuses.has(effectiveStatus)
+        ? shiftEnd
+        : lastCheckOut;
     const workingMinutes =
-      firstCheckIn && lastCheckOut
+      firstCheckIn && finalCheckOut
         ? Math.max(
             0,
             Math.floor(
-              (lastCheckOut.getTime() - firstCheckIn.getTime()) / 60_000,
+              (finalCheckOut.getTime() - firstCheckIn.getTime()) / 60_000,
             ),
           )
         : 0;
-    const status = firstCheckIn
-      ? lastCheckOut
-        ? AttendanceStatus.PRESENT
-        : AttendanceStatus.MISSING_CHECKOUT
-      : AttendanceStatus.ABSENT;
 
     return this.prisma.dailyAttendance.upsert({
       where: {
@@ -273,7 +369,7 @@ export class AttendanceProcessingService {
       },
       update: {
         firstCheckIn,
-        lastCheckOut,
+        lastCheckOut: finalCheckOut,
         workingMinutes,
         status,
       },
@@ -282,7 +378,7 @@ export class AttendanceProcessingService {
         employeeId: day.employeeId,
         date: dateKeyToDatabaseDate(day.dateKey),
         firstCheckIn,
-        lastCheckOut,
+        lastCheckOut: finalCheckOut,
         workingMinutes,
         status,
       },

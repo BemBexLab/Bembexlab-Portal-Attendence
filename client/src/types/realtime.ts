@@ -7,7 +7,8 @@ export type AttendanceStatus =
   | "HALF_DAY"
   | "MISSING_CHECKOUT"
   | "ON_LEAVE"
-  | "HOLIDAY";
+  | "HOLIDAY"
+  | "REMOTE";
 
 export type DeviceStatus = "ACTIVE" | "INACTIVE" | "OFFLINE" | "MAINTENANCE";
 

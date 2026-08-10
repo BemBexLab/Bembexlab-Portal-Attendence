@@ -9,9 +9,11 @@ import ZKLib from 'node-zklib';
 
 import {
   NormalizedAttendancePunch,
+  NormalizedZktecoUser,
   ZktecoConnectionTarget,
   ZktecoDeviceInfo,
   ZktecoRawAttendanceRecord,
+  ZktecoRawUser,
 } from './types/zkteco.types';
 
 type ZktecoProtocol = 'auto' | 'tcp' | 'udp';
@@ -26,12 +28,20 @@ export class ZKTecoService {
   private readonly timeoutMs: number;
   private readonly localPort: number;
   private readonly protocol: ZktecoProtocol;
+  private readonly timeOffsetMinutes: number;
+  private readonly deviceUtcOffsetMinutes: number;
 
   constructor(configService: ConfigService) {
     this.timeoutMs = configService.get<number>('ZKTECO_TIMEOUT_MS') ?? 10_000;
     this.localPort = configService.get<number>('ZKTECO_LOCAL_PORT') ?? 0;
     this.protocol = this.normalizeProtocol(
       configService.get<string>('ZKTECO_PROTOCOL'),
+    );
+    this.timeOffsetMinutes = Number(
+      configService.get<string>('ZKTECO_TIME_OFFSET_MINUTES') ?? 0,
+    );
+    this.deviceUtcOffsetMinutes = Number(
+      configService.get<string>('ZKTECO_DEVICE_UTC_OFFSET_MINUTES') ?? 0,
     );
   }
 
@@ -70,6 +80,20 @@ export class ZKTecoService {
         .filter((record): record is NormalizedAttendancePunch =>
           Boolean(record),
         );
+    });
+  }
+
+  async getUsers(target: ZktecoConnectionTarget) {
+    return this.withConnection(target, async (client) => {
+      const response = await client.getUsers();
+
+      if (response.err) {
+        throw response.err;
+      }
+
+      return response.data
+        .map((user) => this.normalizeUser(user as ZktecoRawUser))
+        .filter((user): user is NormalizedZktecoUser => Boolean(user));
     });
   }
 
@@ -209,20 +233,56 @@ export class ZKTecoService {
       typeof record.deviceUserId === 'number'
         ? String(record.deviceUserId).trim()
         : '';
-    const punchTime =
+    const rawPunchTime =
       record.recordTime instanceof Date
         ? record.recordTime
         : new Date(String(record.recordTime));
 
-    if (!deviceUserId || Number.isNaN(punchTime.getTime())) {
+    if (!deviceUserId || Number.isNaN(rawPunchTime.getTime())) {
       return null;
     }
+
+    // node-zklib constructs the device's timezone-less wall clock with
+    // `new Date(year, ...)`, which incorrectly assigns the API host timezone.
+    // Rebuild that wall clock as the configured device timezone before storing
+    // the real UTC instant in PostgreSQL.
+    const deviceWallClockAsUtc = Date.UTC(
+      rawPunchTime.getFullYear(),
+      rawPunchTime.getMonth(),
+      rawPunchTime.getDate(),
+      rawPunchTime.getHours(),
+      rawPunchTime.getMinutes(),
+      rawPunchTime.getSeconds(),
+    );
+    const punchTime = new Date(
+      deviceWallClockAsUtc -
+        this.deviceUtcOffsetMinutes * 60_000 +
+        this.timeOffsetMinutes * 60_000,
+    );
 
     return {
       deviceUserId,
       punchTime,
       verificationType: VerificationType.UNKNOWN,
       raw: record,
+    };
+  }
+
+  private normalizeUser(user: ZktecoRawUser): NormalizedZktecoUser | null {
+    const deviceUserId =
+      typeof user.userId === 'string' || typeof user.userId === 'number'
+        ? String(user.userId).trim()
+        : '';
+
+    if (!deviceUserId) {
+      return null;
+    }
+
+    const name = typeof user.name === 'string' ? user.name.trim() : '';
+
+    return {
+      deviceUserId,
+      name: name || null,
     };
   }
 

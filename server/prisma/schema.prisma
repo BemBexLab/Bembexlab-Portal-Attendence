@@ -37,6 +37,7 @@ enum AttendanceStatus {
   MISSING_CHECKOUT
   ON_LEAVE
   HOLIDAY
+  REMOTE
 }
 
 model Organization {
@@ -164,6 +165,9 @@ model DailyAttendance {
   lastCheckOut   DateTime?        @map("last_check_out") @db.Timestamptz(6)
   workingMinutes Int              @default(0) @map("working_minutes")
   status         AttendanceStatus @default(ABSENT)
+  statusOverride AttendanceStatus? @map("status_override")
+  statusOverrideAt DateTime?       @map("status_override_at") @db.Timestamptz(6)
+  statusOverrideBy String?         @map("status_override_by") @db.Uuid
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

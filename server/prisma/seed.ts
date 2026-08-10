@@ -42,6 +42,11 @@ async function main() {
       },
     }));
 
+  await prisma.organization.update({
+    where: { id: organization.id },
+    data: { timezone },
+  });
+
   const department = await prisma.department.upsert({
     where: {
       organizationId_name: {

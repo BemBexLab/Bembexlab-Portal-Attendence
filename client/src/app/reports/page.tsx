@@ -21,8 +21,10 @@ function formatHours(minutes: number) {
 function formatTime(value: string | null) {
   return value
     ? new Date(value).toLocaleTimeString([], {
+        timeZone: "Asia/Karachi",
         hour: "2-digit",
         minute: "2-digit",
+        hour12: true,
       })
     : "";
 }

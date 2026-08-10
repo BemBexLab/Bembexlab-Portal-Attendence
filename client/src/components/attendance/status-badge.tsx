@@ -18,6 +18,10 @@ export function AttendanceStatusBadge({ status }: { status: AttendanceStatus }) 
     return <Badge tone="amber">Half day</Badge>;
   }
 
+  if (status === "REMOTE") {
+    return <Badge tone="blue">Remote</Badge>;
+  }
+
   if (status === "ON_LEAVE") {
     return <Badge tone="blue">On leave</Badge>;
   }

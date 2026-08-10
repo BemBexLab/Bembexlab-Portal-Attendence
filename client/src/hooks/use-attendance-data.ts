@@ -12,6 +12,8 @@ import {
   getEmployees,
   syncDeviceAttendance,
   testDevice,
+  updateAttendanceStatus,
+  updateEmployeeStatus,
 } from "@/services/attendance-service";
 
 export const attendanceKeys = {
@@ -30,10 +32,25 @@ export function useDashboardSummary() {
   });
 }
 
-export function useAttendanceRows() {
+export function useAttendanceRows(date?: string) {
   return useQuery({
-    queryKey: attendanceKeys.attendance,
-    queryFn: getAttendanceRows,
+    queryKey: [...attendanceKeys.attendance, date ?? "current"],
+    queryFn: () => getAttendanceRows(date),
+  });
+}
+
+export function useUpdateAttendanceStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateAttendanceStatus,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
+    },
   });
 }
 
@@ -41,6 +58,22 @@ export function useEmployees() {
   return useQuery({
     queryKey: attendanceKeys.employees,
     queryFn: getEmployees,
+  });
+}
+
+export function useUpdateEmployeeStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateEmployeeStatus,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
+    },
   });
 }
 

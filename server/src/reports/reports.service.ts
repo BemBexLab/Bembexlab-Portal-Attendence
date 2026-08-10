@@ -8,6 +8,10 @@ import { AttendanceStatus, UserRole } from '@prisma/client';
 import type { CurrentUser } from '../auth/types/current-user.type';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  getDateKeyInTimeZone,
+  getTimePartsInTimeZone,
+} from '../attendance/utils/timezone';
+import {
   DailyReportQueryDto,
   DateRangeReportQueryDto,
   LateArrivalsReportQueryDto,
@@ -15,13 +19,14 @@ import {
   OvertimeReportQueryDto,
 } from './dto/report-query.dto';
 
-const DEFAULT_LATE_THRESHOLD = '09:00';
+const DEFAULT_LATE_THRESHOLD = '21:15';
 const DEFAULT_OVERTIME_MINUTES = 480;
 const PRESENT_STATUSES = new Set<AttendanceStatus>([
   AttendanceStatus.PRESENT,
   AttendanceStatus.LATE,
   AttendanceStatus.MISSING_CHECKOUT,
   AttendanceStatus.HALF_DAY,
+  AttendanceStatus.REMOTE,
 ]);
 
 type ReportScope = {
@@ -34,9 +39,11 @@ export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getDailyReport(user: CurrentUser, query: DailyReportQueryDto) {
-    const dateKey = this.normalizeDateKey(query.date);
-    const date = this.toDatabaseDate(dateKey);
     const scope = this.resolveScope(user, query.organizationId);
+    const dateKey = query.date
+      ? this.normalizeDateKey(query.date)
+      : await this.getCurrentShiftDateKey(scope.organizationId);
+    const date = this.toDatabaseDate(dateKey);
     const employeeWhere = {
       isActive: true,
       ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
@@ -63,7 +70,8 @@ export class ReportsService {
     );
     const rows = employees.map((employee) => {
       const record = recordsByEmployee.get(employee.id);
-      const status = record?.status ?? AttendanceStatus.ABSENT;
+      const status =
+        record?.statusOverride ?? record?.status ?? AttendanceStatus.ABSENT;
 
       return {
         employeeId: employee.id,
@@ -128,6 +136,7 @@ export class ReportsService {
     >();
 
     for (const record of records) {
+      const status = record.statusOverride ?? record.status;
       const current = rowsByEmployee.get(record.employeeId) ?? {
         employeeId: record.employeeId,
         employeeCode: record.employee.employeeCode,
@@ -142,19 +151,22 @@ export class ReportsService {
         overtimeMinutes: 0,
       };
 
-      if (PRESENT_STATUSES.has(record.status)) {
+      if (PRESENT_STATUSES.has(status)) {
         current.presentDays += 1;
       }
 
-      if (record.status === AttendanceStatus.ABSENT) {
+      if (status === AttendanceStatus.ABSENT) {
         current.absentDays += 1;
       }
 
-      if (record.status === AttendanceStatus.LATE) {
+      if (
+        status === AttendanceStatus.LATE ||
+        status === AttendanceStatus.HALF_DAY
+      ) {
         current.lateDays += 1;
       }
 
-      if (record.status === AttendanceStatus.MISSING_CHECKOUT) {
+      if (status === AttendanceStatus.MISSING_CHECKOUT) {
         current.missingCheckoutDays += 1;
       }
 
@@ -243,7 +255,7 @@ export class ReportsService {
         firstCheckIn: row.firstCheckIn?.toISOString() ?? null,
         lastCheckOut: row.lastCheckOut?.toISOString() ?? null,
         workingMinutes: row.workingMinutes,
-        status: row.status,
+        status: row.statusOverride ?? row.status,
       })),
     };
   }
@@ -269,7 +281,7 @@ export class ReportsService {
           arrival,
           threshold,
           minutesLate: this.diffTimesInMinutes(threshold, arrival),
-          status: record.status,
+          status: record.statusOverride ?? record.status,
         };
       })
       .filter((row) => row.minutesLate > 0)
@@ -309,7 +321,7 @@ export class ReportsService {
         date: this.toDateKey(record.date),
         workingMinutes: record.workingMinutes,
         overtimeMinutes: record.workingMinutes - minimumMinutes,
-        status: record.status,
+        status: record.statusOverride ?? record.status,
       }))
       .sort((left, right) => right.overtimeMinutes - left.overtimeMinutes);
 
@@ -383,10 +395,11 @@ export class ReportsService {
         rows: 0,
       };
 
-      this.applyAnalyticsRecord(trend, record.status, record.workingMinutes);
+      const status = record.statusOverride ?? record.status;
+      this.applyAnalyticsRecord(trend, status, record.workingMinutes);
       this.applyAnalyticsRecord(
         department,
-        record.status,
+        status,
         record.workingMinutes,
       );
       trends.set(dateKey, trend);
@@ -466,7 +479,10 @@ export class ReportsService {
       row.absent += 1;
     }
 
-    if (status === AttendanceStatus.LATE) {
+    if (
+      status === AttendanceStatus.LATE ||
+      status === AttendanceStatus.HALF_DAY
+    ) {
       row.late += 1;
     }
 
@@ -520,6 +536,30 @@ export class ReportsService {
     };
   }
 
+  private async getCurrentShiftDateKey(organizationId?: string) {
+    const organization = organizationId
+      ? await this.prisma.organization.findUnique({
+          where: { id: organizationId },
+          select: { timezone: true },
+        })
+      : await this.prisma.organization.findFirst({
+          orderBy: { createdAt: 'asc' },
+          select: { timezone: true },
+        });
+    const timezone = organization?.timezone || 'Asia/Karachi';
+    const now = new Date();
+    const time = getTimePartsInTimeZone(now, timezone);
+    const dateKey = getDateKeyInTimeZone(now, timezone);
+
+    if (time.hour * 60 + time.minute >= 21 * 60) {
+      return dateKey;
+    }
+
+    const previousDate = this.toDatabaseDate(dateKey);
+    previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+    return this.toDateKey(previousDate);
+  }
+
   private summarizeDailyRows(
     rows: Array<{ status: AttendanceStatus; workingMinutes: number }>,
   ) {
@@ -529,8 +569,11 @@ export class ReportsService {
         .length,
       absentCount: rows.filter((row) => row.status === AttendanceStatus.ABSENT)
         .length,
-      lateCount: rows.filter((row) => row.status === AttendanceStatus.LATE)
-        .length,
+      lateCount: rows.filter(
+        (row) =>
+          row.status === AttendanceStatus.LATE ||
+          row.status === AttendanceStatus.HALF_DAY,
+      ).length,
       missingCheckoutCount: rows.filter(
         (row) => row.status === AttendanceStatus.MISSING_CHECKOUT,
       ).length,
@@ -619,6 +662,13 @@ export class ReportsService {
     const [startHours, startMinutes] = start.split(':').map(Number);
     const [endHours, endMinutes] = end.split(':').map(Number);
 
-    return endHours * 60 + endMinutes - (startHours * 60 + startMinutes);
+    const startTotal = startHours * 60 + startMinutes;
+    let endTotal = endHours * 60 + endMinutes;
+
+    if (endTotal < startTotal) {
+      endTotal += 24 * 60;
+    }
+
+    return endTotal - startTotal;
   }
 }

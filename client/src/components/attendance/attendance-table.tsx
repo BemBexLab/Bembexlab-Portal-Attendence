@@ -1,11 +1,18 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { CalendarDays, ChevronDown, Download, Search } from "lucide-react";
+import { useState } from "react";
 
 import { AttendanceStatusBadge } from "@/components/attendance/status-badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
-import { useAttendanceRows } from "@/hooks/use-attendance-data";
+import { Button } from "@/components/ui/button";
+import {
+  useAttendanceRows,
+  useUpdateAttendanceStatus,
+} from "@/hooks/use-attendance-data";
+import type { AttendanceStatus } from "@/types/attendance";
 import { useDashboardStore } from "@/stores/dashboard-store";
+import { downloadCsv } from "@/lib/csv";
 
 function formatHours(minutes: number) {
   if (minutes <= 0) {
@@ -17,8 +24,55 @@ function formatHours(minutes: number) {
   return `${hours}h ${remainder}m`;
 }
 
+const editableStatuses: AttendanceStatus[] = [
+  "MISSING_CHECKOUT",
+  "ABSENT",
+  "PRESENT",
+  "HALF_DAY",
+  "REMOTE",
+];
+
+function formatStatus(status: AttendanceStatus) {
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function getPakistanOperationalDate() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const date = `${value("year")}-${value("month")}-${value("day")}`;
+
+  if (Number(value("hour")) >= 21) {
+    return date;
+  }
+
+  return shiftDate(date, -1);
+}
+
+function shiftDate(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 export function AttendanceTable() {
-  const attendance = useAttendanceRows();
+  const currentDate = getPakistanOperationalDate();
+  const [selectedDate, setSelectedDate] = useState(currentDate);
+  const attendance = useAttendanceRows(selectedDate);
+  const updateStatus = useUpdateAttendanceStatus();
+  const [openStatusId, setOpenStatusId] = useState<string | null>(null);
   const search = useDashboardStore((state) => state.attendanceSearch);
   const department = useDashboardStore((state) => state.departmentFilter);
   const setSearch = useDashboardStore((state) => state.setAttendanceSearch);
@@ -37,6 +91,20 @@ export function AttendanceTable() {
 
     return matchesSearch && matchesDepartment;
   });
+  const exportCsv = () => {
+    downloadCsv(
+      `attendance-${selectedDate}.csv`,
+      filteredRows.map((row) => ({
+        date: row.date,
+        employee: row.employee,
+        department: row.department,
+        arrival: row.arrival,
+        exit: row.exit,
+        workingHours: formatHours(row.workingMinutes),
+        status: formatStatus(row.status),
+      })),
+    );
+  };
 
   return (
     <Panel>
@@ -48,6 +116,39 @@ export function AttendanceTable() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            onClick={() => setSelectedDate(shiftDate(currentDate, -1))}
+            type="button"
+            variant={selectedDate === shiftDate(currentDate, -1) ? "primary" : "secondary"}
+          >
+            Previous
+          </Button>
+          <Button
+            onClick={() => setSelectedDate(currentDate)}
+            type="button"
+            variant={selectedDate === currentDate ? "primary" : "secondary"}
+          >
+            Current
+          </Button>
+          <label className="relative">
+            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="h-9 rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20"
+              max={currentDate}
+              onChange={(event) => setSelectedDate(event.target.value)}
+              type="date"
+              value={selectedDate}
+            />
+          </label>
+          <Button
+            disabled={!filteredRows.length}
+            onClick={exportCsv}
+            type="button"
+            variant="secondary"
+          >
+            <Download className="size-4" />
+            CSV
+          </Button>
           <label className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -92,7 +193,54 @@ export function AttendanceTable() {
                   <td className="px-4 py-3">{row.exit ?? "-"}</td>
                   <td className="px-4 py-3">{formatHours(row.workingMinutes)}</td>
                   <td className="px-4 py-3">
-                    <AttendanceStatusBadge status={row.status} />
+                    <div className="relative inline-block">
+                        <button
+                          aria-expanded={openStatusId === row.id}
+                          aria-haspopup="menu"
+                          aria-label={`Change ${row.employee}'s attendance status`}
+                          className="inline-flex items-center gap-1 rounded-md outline-none transition hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-wait disabled:opacity-60"
+                          disabled={updateStatus.isPending}
+                          onClick={() =>
+                            setOpenStatusId((current) =>
+                              current === row.id ? null : row.id,
+                            )
+                          }
+                          title="Change attendance status"
+                          type="button"
+                        >
+                          <AttendanceStatusBadge status={row.status} />
+                          <ChevronDown className="size-3 text-muted-foreground" />
+                        </button>
+                        {openStatusId === row.id ? (
+                          <div
+                            className="absolute right-0 z-30 mt-1 min-w-44 space-y-1 rounded-md border border-border bg-background p-1.5 shadow-lg"
+                            role="menu"
+                          >
+                            {editableStatuses.map((status) => (
+                              <button
+                                className="flex w-full items-center rounded px-2 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                                disabled={status === row.status}
+                                key={status}
+                                onClick={() => {
+                                  setOpenStatusId(null);
+                                  updateStatus.mutate({
+                                    employeeId: row.employeeId,
+                                    date: row.date,
+                                    status,
+                                  });
+                                }}
+                                role="menuitem"
+                                type="button"
+                              >
+                                <AttendanceStatusBadge status={status} />
+                                <span className="sr-only">
+                                  {formatStatus(status)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

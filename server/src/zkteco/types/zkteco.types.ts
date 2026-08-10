@@ -25,3 +25,14 @@ export type NormalizedAttendancePunch = {
   verificationType: VerificationType;
   raw: ZktecoRawAttendanceRecord;
 };
+
+export type ZktecoRawUser = {
+  uid?: unknown;
+  name?: unknown;
+  userId?: unknown;
+};
+
+export type NormalizedZktecoUser = {
+  deviceUserId: string;
+  name: string | null;
+};

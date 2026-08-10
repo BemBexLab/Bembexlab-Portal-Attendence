@@ -5,7 +5,8 @@ export type AttendanceStatus =
   | "HALF_DAY"
   | "MISSING_CHECKOUT"
   | "ON_LEAVE"
-  | "HOLIDAY";
+  | "HOLIDAY"
+  | "REMOTE";
 
 export type DeviceStatus = "ACTIVE" | "OFFLINE" | "MAINTENANCE" | "INACTIVE";
 
@@ -13,15 +14,15 @@ export type Employee = {
   id: string;
   employeeCode: string;
   name: string;
-  department: string;
-  deviceUserId: string;
-  role: string;
-  status: "ACTIVE" | "INACTIVE";
+  department: string | null;
+  deviceUserId: string | null;
+  isActive: boolean;
 };
 
 export type AttendanceRow = {
   id: string;
   employeeId: string;
+  date: string;
   employee: string;
   department: string;
   arrival: string | null;

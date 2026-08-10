@@ -40,6 +40,9 @@ export class AttendanceProcessor implements OnModuleInit {
       this.configService.get<string>('ATTENDANCE_SYNC_EVERY_MS', '300000'),
     );
 
+    // Clear a scheduler created with a different repeat strategy (for example,
+    // a previous cron schedule) so its old next-run timestamp is not retained.
+    await queue.removeJobScheduler(SYNC_ALL_DEVICES_JOB);
     await queue.upsertJobScheduler(
       SYNC_ALL_DEVICES_JOB,
       {
@@ -51,7 +54,7 @@ export class AttendanceProcessor implements OnModuleInit {
       },
     );
 
-    this.logger.log('Attendance sync worker scheduled');
+    this.logger.log(`Attendance sync worker scheduled every ${every}ms`);
   }
 
   private async process(job: Job) {
