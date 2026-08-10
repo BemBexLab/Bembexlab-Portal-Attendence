@@ -33,10 +33,7 @@ pnpm-debug.log*
 **/generated/prisma/
 **/.prisma/
 
-# Docker and local data
-postgres-data/
-redis-data/
-docker-data/
+# Local data
 backups/
 .git-nested-backups/
 
