@@ -198,10 +198,10 @@ export default function ReportsPage() {
 
         <PayrollReportPanel />
 
-        <div className="grid gap-4 xl:grid-cols-2">
+        {/* <div className="grid gap-4 xl:grid-cols-2">
           <LateArrivalsTable rows={lateArrivals.data?.rows ?? []} />
           <OvertimeTable rows={overtime.data?.rows ?? []} />
-        </div>
+        </div> */}
       </div>
     </AppShell>
   );
