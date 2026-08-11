@@ -5,17 +5,19 @@ import {
   CalendarDays,
   Fingerprint,
   LayoutDashboard,
+  LogOut,
   Menu,
   MonitorCheck,
   CalendarRange,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
+import { useLogout } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
@@ -38,6 +40,8 @@ type AppShellProps = {
 
 export function AppShell({ children, title, description }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const logout = useLogout();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
   const user = useAuthStore((state) => state.user);
@@ -48,7 +52,7 @@ export function AppShell({ children, title, description }: AppShellProps) {
       <div className="min-h-screen bg-muted/30 text-foreground">
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-border bg-sidebar md:block",
+            "fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-sidebar md:flex",
             !sidebarOpen && "md:w-16",
           )}
         >
@@ -66,7 +70,7 @@ export function AppShell({ children, title, description }: AppShellProps) {
             ) : null}
           </div>
 
-          <nav className="space-y-1 px-2 py-3">
+          <nav className="flex-1 space-y-1 px-2 py-3">
             {navItems.map((item) => {
               const active = pathname === item.href;
               const Icon = item.icon;
@@ -88,6 +92,29 @@ export function AppShell({ children, title, description }: AppShellProps) {
               );
             })}
           </nav>
+
+          <div className="border-t border-sidebar-border p-2">
+            <button
+              aria-label="Log out"
+              className={cn(
+                "flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-accent disabled:cursor-wait disabled:opacity-60",
+                !sidebarOpen && "justify-center px-0",
+              )}
+              disabled={logout.isPending}
+              onClick={() => {
+                logout.mutate(undefined, {
+                  onSettled: () => router.replace("/login"),
+                });
+              }}
+              title="Log out"
+              type="button"
+            >
+              <LogOut className="size-4 shrink-0" />
+              {sidebarOpen ? (
+                <span>{logout.isPending ? "Logging out..." : "Log out"}</span>
+              ) : null}
+            </button>
+          </div>
         </aside>
 
         <div className={cn("md:pl-64", !sidebarOpen && "md:pl-16")}>

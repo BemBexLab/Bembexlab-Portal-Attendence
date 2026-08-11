@@ -2,6 +2,7 @@
 
 import { CalendarDays, ChevronDown, Download, Search } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { AttendanceStatusBadge } from "@/components/attendance/status-badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
@@ -63,7 +64,11 @@ export function AttendanceTable() {
   const currentDate = operationalDate;
   const previousDate = currentDate ? shiftDate(currentDate, -1) : "";
   const updateStatus = useUpdateAttendanceStatus();
-  const [openStatusId, setOpenStatusId] = useState<string | null>(null);
+  const [openStatusMenu, setOpenStatusMenu] = useState<{
+    id: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const search = useDashboardStore((state) => state.attendanceSearch);
   const department = useDashboardStore((state) => state.departmentFilter);
   const setSearch = useDashboardStore((state) => state.setAttendanceSearch);
@@ -76,6 +81,21 @@ export function AttendanceTable() {
       setSelectedDate(attendance.data.date);
     }
   }, [attendance.data?.date, operationalDate]);
+
+  useEffect(() => {
+    if (!openStatusMenu) {
+      return;
+    }
+
+    const closeMenu = () => setOpenStatusMenu(null);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+
+    return () => {
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [openStatusMenu]);
   const departments = [
     "All departments",
     ...Array.from(new Set(rows.map((row) => row.department))),
@@ -197,28 +217,44 @@ export function AttendanceTable() {
                   <td className="px-4 py-3">{row.exit ?? "-"}</td>
                   <td className="px-4 py-3">{formatHours(row.workingMinutes)}</td>
                   <td className="px-4 py-3">
-                    <div className="relative inline-block">
+                    <div className="inline-block">
                         <button
-                          aria-expanded={openStatusId === row.id}
+                          aria-expanded={openStatusMenu?.id === row.id}
                           aria-haspopup="menu"
                           aria-label={`Change ${row.employee}'s attendance status`}
                           className="inline-flex items-center gap-1 rounded-md outline-none transition hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-wait disabled:opacity-60"
                           disabled={updateStatus.isPending}
-                          onClick={() =>
-                            setOpenStatusId((current) =>
-                              current === row.id ? null : row.id,
-                            )
-                          }
+                          onClick={(event) => {
+                            if (openStatusMenu?.id === row.id) {
+                              setOpenStatusMenu(null);
+                              return;
+                            }
+
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const menuWidth = 176;
+                            setOpenStatusMenu({
+                              id: row.id,
+                              top: rect.bottom + 4,
+                              left: Math.max(
+                                8,
+                                Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8),
+                              ),
+                            });
+                          }}
                           title="Change attendance status"
                           type="button"
                         >
                           <AttendanceStatusBadge status={row.status} />
                           <ChevronDown className="size-3 text-muted-foreground" />
                         </button>
-                        {openStatusId === row.id ? (
+                        {openStatusMenu?.id === row.id ? createPortal(
                           <div
-                            className="absolute right-0 z-30 mt-1 min-w-44 space-y-1 rounded-md border border-border bg-background p-1.5 shadow-lg"
+                            className="fixed z-50 min-w-44 space-y-1 rounded-md border border-border bg-background p-1.5 shadow-lg"
                             role="menu"
+                            style={{
+                              left: openStatusMenu.left,
+                              top: openStatusMenu.top,
+                            }}
                           >
                             {editableStatuses.map((status) => (
                               <button
@@ -226,7 +262,7 @@ export function AttendanceTable() {
                                 disabled={status === row.status}
                                 key={status}
                                 onClick={() => {
-                                  setOpenStatusId(null);
+                                  setOpenStatusMenu(null);
                                   updateStatus.mutate({
                                     employeeId: row.employeeId,
                                     date: row.date,
@@ -242,7 +278,8 @@ export function AttendanceTable() {
                                 </span>
                               </button>
                             ))}
-                          </div>
+                          </div>,
+                          document.body,
                         ) : null}
                     </div>
                   </td>

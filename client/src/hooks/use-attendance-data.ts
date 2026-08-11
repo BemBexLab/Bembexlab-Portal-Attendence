@@ -15,6 +15,7 @@ import {
   updateAttendanceStatus,
   assignBulkAttendanceStatus,
   getScheduledAttendanceStatuses,
+  removeScheduledAttendanceStatus,
   updateEmployeeStatus,
   updateEmployeeSalary,
 } from "@/services/attendance-service";
@@ -74,6 +75,22 @@ export function useAssignBulkAttendanceStatus() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: attendanceKeys.scheduledStatuses }),
         queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
+    },
+  });
+}
+
+export function useRemoveScheduledAttendanceStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: removeScheduledAttendanceStatus,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.scheduledStatuses }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
         queryClient.invalidateQueries({ queryKey: ["reports"] }),
       ]);
     },

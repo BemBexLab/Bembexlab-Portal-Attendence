@@ -1,7 +1,8 @@
 "use client";
 
-import { CalendarRange, Laptop, Search, Umbrella } from "lucide-react";
+import { CalendarRange, Laptop, Search, Trash2, Umbrella } from "lucide-react";
 import { useState } from "react";
+import Swal from "sweetalert2";
 
 import { AttendanceStatusBadge } from "@/components/attendance/status-badge";
 import { AppShell } from "@/components/layout/app-shell";
@@ -10,6 +11,7 @@ import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import {
   useAssignBulkAttendanceStatus,
   useEmployees,
+  useRemoveScheduledAttendanceStatus,
   useScheduledAttendanceStatuses,
 } from "@/hooks/use-attendance-data";
 
@@ -19,6 +21,7 @@ export default function LeaveRemotePage() {
   const employees = useEmployees();
   const scheduled = useScheduledAttendanceStatuses();
   const assignStatus = useAssignBulkAttendanceStatus();
+  const removeStatus = useRemoveScheduledAttendanceStatus();
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const [status, setStatus] = useState<ScheduledStatus>("REMOTE");
@@ -223,6 +226,7 @@ export default function LeaveRemotePage() {
                     <th className="px-4 py-3 font-medium">Employee</th>
                     <th className="px-4 py-3 font-medium">Department</th>
                     <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -242,6 +246,55 @@ export default function LeaveRemotePage() {
                       </td>
                       <td className="px-4 py-3">
                         <AttendanceStatusBadge status={item.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          aria-label={`Remove ${item.employee}'s ${item.status === "REMOTE" ? "remote" : "leave"} assignment for ${item.date}`}
+                          className="size-9 p-0 text-destructive hover:text-destructive"
+                          disabled={removeStatus.isPending}
+                          onClick={async () => {
+                            const assignment =
+                              item.status === "REMOTE" ? "remote" : "leave";
+                            const confirmation = await Swal.fire({
+                              title: "Remove assignment?",
+                              text: `Remove ${item.employee}'s ${assignment} assignment for ${item.date}?`,
+                              icon: "warning",
+                              showCancelButton: true,
+                              confirmButtonText: "Yes, remove it",
+                              cancelButtonText: "Cancel",
+                              confirmButtonColor: "#171717",
+                              cancelButtonColor: "#737373",
+                              reverseButtons: true,
+                              focusCancel: true,
+                            });
+
+                            if (!confirmation.isConfirmed) {
+                              return;
+                            }
+
+                            try {
+                              await removeStatus.mutateAsync(item.id);
+                              await Swal.fire({
+                                title: "Assignment removed",
+                                text: `${item.employee}'s ${assignment} assignment for ${item.date} was removed.`,
+                                icon: "success",
+                                confirmButtonColor: "#171717",
+                              });
+                            } catch {
+                              await Swal.fire({
+                                title: "Could not remove assignment",
+                                text: "Please try again.",
+                                icon: "error",
+                                confirmButtonColor: "#171717",
+                              });
+                            }
+                          }}
+                          title="Remove assignment"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
                       </td>
                     </tr>
                   ))}

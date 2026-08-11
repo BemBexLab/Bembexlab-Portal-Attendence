@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   async rewrites() {
     const apiUrl = (
       process.env.API_URL ||

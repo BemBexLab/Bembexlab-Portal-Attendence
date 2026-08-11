@@ -86,12 +86,14 @@ export class AttendanceService {
     );
 
     if (from < today) {
-      throw new BadRequestException('Bulk status can only be scheduled in advance');
+      throw new BadRequestException(
+        'Bulk status can only be scheduled in advance',
+      );
     }
 
     const dates: Date[] = [];
 
-    for (let date = from; date <= to; ) {
+    for (let date = from; date <= to;) {
       const weekday = date.getUTCDay();
 
       if (weekday !== 0 && weekday !== 6) {
@@ -138,6 +140,59 @@ export class AttendanceService {
         1 -
         dates.length,
     };
+  }
+
+  async removeScheduledStatus(user: CurrentUser, id: string) {
+    const record = await this.prisma.dailyAttendance.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        organizationId: true,
+        date: true,
+        firstCheckIn: true,
+        lastCheckOut: true,
+        statusOverride: true,
+      },
+    });
+
+    if (!record) {
+      throw new NotFoundException('Scheduled assignment not found');
+    }
+
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      record.organizationId !== user.organizationId
+    ) {
+      throw new ForbiddenException('Cannot update another organization');
+    }
+
+    const databaseNow = await this.prisma.databaseNow();
+    const today = dateKeyToDatabaseDate(
+      getDateKeyInTimeZone(databaseNow, 'Asia/Karachi'),
+    );
+
+    if (
+      record.date < today ||
+      (record.statusOverride !== AttendanceStatus.REMOTE &&
+        record.statusOverride !== AttendanceStatus.ON_LEAVE)
+    ) {
+      throw new NotFoundException('Scheduled assignment not found');
+    }
+
+    if (!record.firstCheckIn && !record.lastCheckOut) {
+      await this.prisma.dailyAttendance.delete({ where: { id } });
+    } else {
+      await this.prisma.dailyAttendance.update({
+        where: { id },
+        data: {
+          statusOverride: null,
+          statusOverrideAt: null,
+          statusOverrideBy: null,
+        },
+      });
+    }
+
+    return { id, removed: true };
   }
 
   async updateStatus(

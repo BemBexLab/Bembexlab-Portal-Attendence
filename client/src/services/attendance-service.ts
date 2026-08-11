@@ -149,6 +149,13 @@ export async function getScheduledAttendanceStatuses() {
   return response.data;
 }
 
+export async function removeScheduledAttendanceStatus(id: string) {
+  const response = await api.delete<{ id: string; removed: boolean }>(
+    `/attendance/scheduled-statuses/${id}`,
+  );
+  return response.data;
+}
+
 async function getDailyReport(date?: string) {
   const response = await api.get<DailyReport>("/reports/daily", {
     params: { date },

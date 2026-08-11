@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
 import { CurrentUserDecorator } from '../auth/decorators/current-user.decorator';
@@ -27,6 +37,14 @@ export class AttendanceController {
     @Body() dto: BulkAttendanceStatusDto,
   ) {
     return this.attendanceService.assignBulkStatus(user, dto);
+  }
+
+  @Delete('scheduled-statuses/:id')
+  removeScheduledStatus(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.attendanceService.removeScheduledStatus(user, id);
   }
 
   @Patch(':employeeId/:date/status')
