@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import type {
   AttendanceRow,
+  AttendanceExportReport,
   AttendanceTrend,
   DailyReport,
   DepartmentAttendance,
@@ -47,6 +48,31 @@ export async function getAttendanceRows(date?: string) {
     rows: dailyReport.rows.map<AttendanceRow>((row) => ({
       id: `${row.employeeId}-${row.date}`,
       employeeId: row.employeeId,
+      employeeCode: row.employeeCode,
+      date: row.date,
+      employee: row.employee,
+      department: row.department,
+      arrival: formatTime(row.firstCheckIn),
+      exit: formatTime(row.lastCheckOut),
+      workingMinutes: row.workingMinutes,
+      status: row.status,
+    })),
+  };
+}
+
+export async function getAttendanceRowsForRange(from: string, to: string) {
+  const response = await api.get<AttendanceExportReport>(
+    "/reports/attendance-export",
+    { params: { from, to } },
+  );
+
+  return {
+    from: response.data.from,
+    to: response.data.to,
+    rows: response.data.rows.map<AttendanceRow>((row) => ({
+      id: `${row.employeeId}-${row.date}`,
+      employeeId: row.employeeId,
+      employeeCode: row.employeeCode,
       date: row.date,
       employee: row.employee,
       department: row.department,

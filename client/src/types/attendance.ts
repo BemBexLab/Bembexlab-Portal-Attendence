@@ -62,6 +62,7 @@ export type PayrollReport = {
 export type AttendanceRow = {
   id: string;
   employeeId: string;
+  employeeCode: string;
   date: string;
   employee: string;
   department: string;

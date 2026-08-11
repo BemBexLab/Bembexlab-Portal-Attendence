@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchDeviceInfo,
   getAttendanceRows,
+  getAttendanceRowsForRange,
   getAttendanceTrend,
   getDashboardSummary,
   getDepartmentAttendance,
@@ -41,6 +42,14 @@ export function useAttendanceRows(date?: string) {
   return useQuery({
     queryKey: [...attendanceKeys.attendance, date ?? "current"],
     queryFn: () => getAttendanceRows(date),
+  });
+}
+
+export function useAttendanceRowsForRange(from: string, to: string) {
+  return useQuery({
+    queryKey: [...attendanceKeys.attendance, "range", from, to],
+    queryFn: () => getAttendanceRowsForRange(from, to),
+    enabled: Boolean(from && to),
   });
 }
 

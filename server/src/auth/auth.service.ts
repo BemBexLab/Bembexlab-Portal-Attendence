@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './types/jwt-payload.type';
+import type { CurrentUser } from './types/current-user.type';
 
 @Injectable()
 export class AuthService {
@@ -29,6 +30,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    return {
+      accessToken: await this.issueAccessToken(user),
+      user: this.usersService.toSafeUser(user),
+    };
+  }
+
+  issueAccessToken(
+    user: Pick<CurrentUser, 'id' | 'organizationId' | 'email' | 'role'>,
+  ) {
     const payload: JwtPayload = {
       sub: user.id,
       organizationId: user.organizationId,
@@ -36,9 +46,6 @@ export class AuthService {
       role: user.role,
     };
 
-    return {
-      accessToken: await this.jwtService.signAsync(payload),
-      user: this.usersService.toSafeUser(user),
-    };
+    return this.jwtService.signAsync(payload);
   }
 }

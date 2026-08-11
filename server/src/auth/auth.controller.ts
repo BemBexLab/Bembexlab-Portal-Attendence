@@ -32,10 +32,7 @@ export class AuthController {
   ) {
     const result = await this.authService.login(loginDto);
 
-    response.cookie(ACCESS_TOKEN_COOKIE, result.accessToken, {
-      ...this.getCookieOptions(),
-      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
-    });
+    this.setAccessTokenCookie(response, result.accessToken);
 
     return {
       user: result.user,
@@ -44,7 +41,15 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  me(@CurrentUserDecorator() user: CurrentUser) {
+  async me(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    this.setAccessTokenCookie(
+      response,
+      await this.authService.issueAccessToken(user),
+    );
+
     return {
       user,
     };
@@ -54,6 +59,13 @@ export class AuthController {
   @HttpCode(204)
   logout(@Res({ passthrough: true }) response: Response) {
     response.clearCookie(ACCESS_TOKEN_COOKIE, this.getCookieOptions());
+  }
+
+  private setAccessTokenCookie(response: Response, accessToken: string) {
+    response.cookie(ACCESS_TOKEN_COOKIE, accessToken, {
+      ...this.getCookieOptions(),
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
+    });
   }
 
   private getCookieOptions() {
