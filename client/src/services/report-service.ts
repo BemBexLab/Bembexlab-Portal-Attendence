@@ -5,6 +5,7 @@ import type {
   LateArrivalsReport,
   MonthlyReport,
   OvertimeReport,
+  PayrollReport,
   ReportAnalytics,
 } from "@/types/attendance";
 
@@ -41,4 +42,8 @@ export function getAttendanceExport(from: string, to: string) {
     from,
     to,
   });
+}
+
+export function getPayrollReport(month?: string) {
+  return getReport<PayrollReport>("/reports/payroll", { month });
 }

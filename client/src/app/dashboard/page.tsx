@@ -105,7 +105,7 @@ export default function DashboardPage() {
           </Panel>
         </div>
 
-        <AttendanceTable />
+        {/* <AttendanceTable /> */}
       </div>
     </AppShell>
   );

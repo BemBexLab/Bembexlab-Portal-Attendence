@@ -13,7 +13,10 @@ import {
   syncDeviceAttendance,
   testDevice,
   updateAttendanceStatus,
+  assignBulkAttendanceStatus,
+  getScheduledAttendanceStatuses,
   updateEmployeeStatus,
+  updateEmployeeSalary,
 } from "@/services/attendance-service";
 
 export const attendanceKeys = {
@@ -23,6 +26,7 @@ export const attendanceKeys = {
   devices: ["devices"] as const,
   departments: ["reports", "departments"] as const,
   trend: ["reports", "trend"] as const,
+  scheduledStatuses: ["attendance", "scheduled-statuses"] as const,
 };
 
 export function useDashboardSummary() {
@@ -54,6 +58,28 @@ export function useUpdateAttendanceStatus() {
   });
 }
 
+export function useScheduledAttendanceStatuses() {
+  return useQuery({
+    queryKey: attendanceKeys.scheduledStatuses,
+    queryFn: getScheduledAttendanceStatuses,
+  });
+}
+
+export function useAssignBulkAttendanceStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: assignBulkAttendanceStatus,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.scheduledStatuses }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
+    },
+  });
+}
+
 export function useEmployees() {
   return useQuery({
     queryKey: attendanceKeys.employees,
@@ -72,6 +98,20 @@ export function useUpdateEmployeeStatus() {
         queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
         queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
         queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
+    },
+  });
+}
+
+export function useUpdateEmployeeSalary() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateEmployeeSalary,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
+        queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] }),
       ]);
     },
   });

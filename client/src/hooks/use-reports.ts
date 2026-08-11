@@ -8,6 +8,7 @@ import {
   getMonthlyReport,
   getOvertimeReport,
   getReportAnalytics,
+  getPayrollReport,
 } from "@/services/report-service";
 
 export const reportKeys = {
@@ -17,6 +18,7 @@ export const reportKeys = {
   lateArrivals: ["reports", "late-arrivals"] as const,
   overtime: ["reports", "overtime"] as const,
   analytics: ["reports", "analytics"] as const,
+  payroll: (month?: string) => ["reports", "payroll", month ?? "current"] as const,
 };
 
 export function useDailyReport(date?: string) {
@@ -51,5 +53,12 @@ export function useReportAnalytics() {
   return useQuery({
     queryKey: reportKeys.analytics,
     queryFn: getReportAnalytics,
+  });
+}
+
+export function usePayrollReport(month?: string) {
+  return useQuery({
+    queryKey: reportKeys.payroll(month),
+    queryFn: () => getPayrollReport(month),
   });
 }

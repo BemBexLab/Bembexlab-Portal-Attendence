@@ -9,6 +9,7 @@ import type {
   DeviceSyncResult,
   Employee,
   ReportAnalytics,
+  ScheduledAttendanceStatus,
 } from "@/types/attendance";
 
 export async function getEmployees() {
@@ -23,6 +24,17 @@ export async function updateEmployeeStatus(input: {
   const response = await api.patch<Employee>(
     `/users/employees/${input.employeeId}/status`,
     { isActive: input.isActive },
+  );
+  return response.data;
+}
+
+export async function updateEmployeeSalary(input: {
+  employeeId: string;
+  monthlySalary: number;
+}) {
+  const response = await api.patch<Pick<Employee, "id" | "monthlySalary">>(
+    `/users/employees/${input.employeeId}/salary`,
+    { monthlySalary: input.monthlySalary },
   );
   return response.data;
 }
@@ -113,6 +125,26 @@ export async function updateAttendanceStatus(input: {
   const response = await api.patch(
     `/attendance/${input.employeeId}/${input.date}/status`,
     { status: input.status },
+  );
+  return response.data;
+}
+
+export async function assignBulkAttendanceStatus(input: {
+  employeeId: string;
+  from: string;
+  to: string;
+  status: "REMOTE" | "ON_LEAVE";
+}) {
+  const response = await api.post<{
+    assignedDates: string[];
+    skippedWeekendDays: number;
+  }>("/attendance/bulk-status", input);
+  return response.data;
+}
+
+export async function getScheduledAttendanceStatuses() {
+  const response = await api.get<ScheduledAttendanceStatus[]>(
+    "/attendance/scheduled-statuses",
   );
   return response.data;
 }

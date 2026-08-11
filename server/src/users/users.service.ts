@@ -59,6 +59,7 @@ export class UsersService {
       department: employee.department?.name ?? null,
       deviceUserId: employee.deviceUserId,
       isActive: employee.isActive,
+      monthlySalary: employee.monthlySalary.toString(),
     }));
   }
 
@@ -98,6 +99,44 @@ export class UsersService {
         isActive: true,
       },
     });
+  }
+
+  async updateEmployeeSalary(
+    user: CurrentUser,
+    employeeId: string,
+    monthlySalary: number,
+  ) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, organizationId: true },
+    });
+
+    if (!employee) {
+      throw new ForbiddenException('Employee not found');
+    }
+
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      employee.organizationId !== user.organizationId
+    ) {
+      throw new ForbiddenException('Cannot update another organization');
+    }
+
+    const updated = await this.prisma.employee.update({
+      where: { id: employee.id },
+      data: { monthlySalary },
+      select: {
+        id: true,
+        employeeCode: true,
+        name: true,
+        monthlySalary: true,
+      },
+    });
+
+    return {
+      ...updated,
+      monthlySalary: updated.monthlySalary.toString(),
+    };
   }
 
   toSafeUser(user: User): SafeUser {

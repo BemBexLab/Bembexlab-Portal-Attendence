@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -8,13 +8,25 @@ import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import {
   useEmployees,
+  useUpdateEmployeeSalary,
   useUpdateEmployeeStatus,
 } from "@/hooks/use-attendance-data";
 
 export default function EmployeesPage() {
   const employees = useEmployees();
   const updateStatus = useUpdateEmployeeStatus();
+  const updateSalary = useUpdateEmployeeSalary();
   const [openStatusId, setOpenStatusId] = useState<string | null>(null);
+  const [salaryDrafts, setSalaryDrafts] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState("");
+  const filteredEmployees = (employees.data ?? []).filter((employee) => {
+    const query = search.toLowerCase().trim();
+    return (
+      !query ||
+      employee.name.toLowerCase().includes(query) ||
+      employee.employeeCode.toLowerCase().includes(query)
+    );
+  });
 
   return (
     <AppShell
@@ -22,13 +34,23 @@ export default function EmployeesPage() {
       title="Employees"
     >
       <Panel>
-        <PanelHeader>
+        <PanelHeader className="flex-col items-stretch sm:flex-row sm:items-center">
           <div>
             <h2 className="text-sm font-semibold">Employee directory</h2>
             <p className="text-xs text-muted-foreground">
               Device user IDs are used for raw punch matching.
             </p>
           </div>
+          <label className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              aria-label="Search employees by name or code"
+              className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20 sm:w-72"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name or employee code"
+              value={search}
+            />
+          </label>
         </PanelHeader>
         <PanelBody className="p-0">
           <div className="overflow-x-auto">
@@ -39,11 +61,12 @@ export default function EmployeesPage() {
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Department</th>
                   <th className="px-4 py-3 font-medium">Device User ID</th>
+                  <th className="px-4 py-3 font-medium">Monthly Salary</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {(employees.data ?? []).map((employee) => (
+                {filteredEmployees.map((employee) => (
                   <tr className="hover:bg-muted/40" key={employee.id}>
                     <td className="px-4 py-3 font-medium">
                       {employee.employeeCode}
@@ -54,6 +77,63 @@ export default function EmployeesPage() {
                     </td>
                     <td className="px-4 py-3">
                       {employee.deviceUserId ?? "Not assigned"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                            PKR
+                          </span>
+                          <input
+                            aria-label={`${employee.name} monthly salary`}
+                            className="h-8 w-36 rounded-md border border-input bg-background pl-10 pr-2 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring/20"
+                            min="0"
+                            onChange={(event) =>
+                              setSalaryDrafts((current) => ({
+                                ...current,
+                                [employee.id]: event.target.value,
+                              }))
+                            }
+                            step="0.01"
+                            type="number"
+                            value={
+                              salaryDrafts[employee.id] ?? employee.monthlySalary
+                            }
+                          />
+                        </div>
+                        <button
+                          aria-label={`Save ${employee.name} salary`}
+                          className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={
+                            updateSalary.isPending ||
+                            salaryDrafts[employee.id] === undefined ||
+                            salaryDrafts[employee.id] === employee.monthlySalary ||
+                            Number(salaryDrafts[employee.id]) < 0
+                          }
+                          onClick={() => {
+                            const value = Number(salaryDrafts[employee.id]);
+
+                            if (!Number.isFinite(value) || value < 0) {
+                              return;
+                            }
+
+                            updateSalary.mutate({
+                              employeeId: employee.id,
+                              monthlySalary: value,
+                            }, {
+                              onSuccess: () =>
+                                setSalaryDrafts((current) => {
+                                  const next = { ...current };
+                                  delete next[employee.id];
+                                  return next;
+                                }),
+                            });
+                          }}
+                          type="button"
+                        >
+                          <Check className="size-4" />
+                        </button>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="relative inline-block">
@@ -111,6 +191,16 @@ export default function EmployeesPage() {
                     </td>
                   </tr>
                 ))}
+                {!filteredEmployees.length && !employees.isLoading ? (
+                  <tr>
+                    <td
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
+                      colSpan={6}
+                    >
+                      No employees match “{search}”.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>

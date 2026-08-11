@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Menu,
   MonitorCheck,
+  CalendarRange,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
@@ -24,6 +25,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/employees", label: "Employees", icon: UsersRound },
   { href: "/attendance", label: "Attendance", icon: CalendarDays },
+  { href: "/leave-remote", label: "Leave & Remote", icon: CalendarRange },
   { href: "/devices", label: "Devices", icon: Fingerprint },
   { href: "/reports", label: "Reports", icon: BarChart3 },
 ];

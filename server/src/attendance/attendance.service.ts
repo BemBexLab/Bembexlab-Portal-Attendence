@@ -4,19 +4,141 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { AttendanceStatus, UserRole } from '@prisma/client';
 
 import type { CurrentUser } from '../auth/types/current-user.type';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   dateKeyToDatabaseDate,
+  getDateKeyInTimeZone,
   getPakistanShiftEnd,
 } from './utils/timezone';
 import type { UpdateAttendanceStatusDto } from './dto/update-attendance-status.dto';
+import type { BulkAttendanceStatusDto } from './dto/bulk-attendance-status.dto';
 
 @Injectable()
 export class AttendanceService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async getScheduledStatuses(user: CurrentUser) {
+    const databaseNow = await this.prisma.databaseNow();
+    const today = dateKeyToDatabaseDate(
+      getDateKeyInTimeZone(databaseNow, 'Asia/Karachi'),
+    );
+    const records = await this.prisma.dailyAttendance.findMany({
+      where: {
+        ...(user.role === UserRole.SUPER_ADMIN
+          ? {}
+          : { organizationId: user.organizationId as string }),
+        date: { gte: today },
+        statusOverride: {
+          in: [AttendanceStatus.REMOTE, AttendanceStatus.ON_LEAVE],
+        },
+      },
+      include: {
+        employee: { include: { department: true } },
+      },
+      orderBy: [{ date: 'asc' }, { employee: { employeeCode: 'asc' } }],
+    });
+
+    return records.map((record) => ({
+      id: record.id,
+      employeeId: record.employeeId,
+      employeeCode: record.employee.employeeCode,
+      employee: record.employee.name,
+      department: record.employee.department?.name ?? 'Unassigned',
+      date: record.date.toISOString().slice(0, 10),
+      status: record.statusOverride,
+    }));
+  }
+
+  async assignBulkStatus(user: CurrentUser, dto: BulkAttendanceStatusDto) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: dto.employeeId },
+      select: { id: true, organizationId: true, isActive: true },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('Employee not found');
+    }
+
+    if (!employee.isActive) {
+      throw new BadRequestException('Cannot schedule an inactive employee');
+    }
+
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      employee.organizationId !== user.organizationId
+    ) {
+      throw new ForbiddenException('Cannot update another organization');
+    }
+
+    const from = dateKeyToDatabaseDate(dto.from);
+    const to = dateKeyToDatabaseDate(dto.to);
+
+    if (from > to) {
+      throw new BadRequestException('from must be on or before to');
+    }
+
+    const databaseNow = await this.prisma.databaseNow();
+    const today = dateKeyToDatabaseDate(
+      getDateKeyInTimeZone(databaseNow, 'Asia/Karachi'),
+    );
+
+    if (from < today) {
+      throw new BadRequestException('Bulk status can only be scheduled in advance');
+    }
+
+    const dates: Date[] = [];
+
+    for (let date = from; date <= to; ) {
+      const weekday = date.getUTCDay();
+
+      if (weekday !== 0 && weekday !== 6) {
+        dates.push(date);
+      }
+
+      const next = dateKeyToDatabaseDate(date.toISOString().slice(0, 10));
+      next.setUTCDate(next.getUTCDate() + 1);
+      date = next;
+    }
+
+    await this.prisma.$transaction(
+      dates.map((date) =>
+        this.prisma.dailyAttendance.upsert({
+          where: { employeeId_date: { employeeId: employee.id, date } },
+          update: {
+            statusOverride: dto.status,
+            statusOverrideAt: databaseNow,
+            statusOverrideBy: user.id,
+            lastCheckOut: null,
+            workingMinutes: 0,
+          },
+          create: {
+            organizationId: employee.organizationId,
+            employeeId: employee.id,
+            date,
+            status: dto.status,
+            statusOverride: dto.status,
+            statusOverrideAt: databaseNow,
+            statusOverrideBy: user.id,
+          },
+        }),
+      ),
+    );
+
+    return {
+      employeeId: employee.id,
+      status: dto.status,
+      from: dto.from,
+      to: dto.to,
+      assignedDates: dates.map((date) => date.toISOString().slice(0, 10)),
+      skippedWeekendDays:
+        Math.floor((to.getTime() - from.getTime()) / 86_400_000) +
+        1 -
+        dates.length,
+    };
+  }
 
   async updateStatus(
     user: CurrentUser,
@@ -59,7 +181,8 @@ export class AttendanceService {
       ? shiftEnd
       : undefined;
     const removePreviousAutomaticCheckout =
-      dto.status === 'REMOTE' &&
+      (dto.status === AttendanceStatus.REMOTE ||
+        dto.status === AttendanceStatus.ON_LEAVE) &&
       existingAttendance?.lastCheckOut?.getTime() === shiftEnd.getTime();
     return this.prisma.dailyAttendance.upsert({
       where: { employeeId_date: { employeeId, date } },

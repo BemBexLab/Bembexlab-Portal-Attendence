@@ -30,6 +30,7 @@ const editableStatuses: AttendanceStatus[] = [
   "PRESENT",
   "HALF_DAY",
   "REMOTE",
+  "ON_LEAVE",
 ];
 
 function formatStatus(status: AttendanceStatus) {

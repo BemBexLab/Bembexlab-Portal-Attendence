@@ -1,0 +1,2 @@
+ALTER TABLE "employees"
+ADD COLUMN "monthly_salary" DECIMAL(12, 2) NOT NULL DEFAULT 0;

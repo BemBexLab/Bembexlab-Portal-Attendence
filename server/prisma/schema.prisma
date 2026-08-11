@@ -102,6 +102,7 @@ model Employee {
   deviceUserId   String?  @map("device_user_id") @db.VarChar(80)
   isActive       Boolean  @default(true) @map("is_active")
   attendanceTrackingSince DateTime? @map("attendance_tracking_since") @db.Timestamptz(6)
+  monthlySalary  Decimal  @default(0) @map("monthly_salary") @db.Decimal(12, 2)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

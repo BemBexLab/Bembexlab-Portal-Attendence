@@ -17,6 +17,46 @@ export type Employee = {
   department: string | null;
   deviceUserId: string | null;
   isActive: boolean;
+  monthlySalary: string;
+};
+
+export type PayrollRow = {
+  employeeId: string;
+  employeeCode: string;
+  employee: string;
+  department: string;
+  monthlySalary: number;
+  workingDays: number;
+  assessedWorkingDays: number;
+  dailyRate: number;
+  presentDays: number;
+  absentDays: number;
+  halfDays: number;
+  halfDayDeductionDays: number;
+  totalDeductionDays: number;
+  deductionAmount: number;
+  payableSalary: number;
+  attendanceDetails: Array<{
+    date: string;
+    day: string;
+    status: "ABSENT" | "HALF_DAY";
+  }>;
+};
+
+export type PayrollReport = {
+  month: string;
+  cycleStart: string;
+  cycleEnd: string;
+  calculatedThrough: string | null;
+  workingDays: number;
+  rule: string;
+  summary: {
+    employees: number;
+    grossSalary: number;
+    deductions: number;
+    payableSalary: number;
+  };
+  rows: PayrollRow[];
 };
 
 export type AttendanceRow = {
@@ -29,6 +69,16 @@ export type AttendanceRow = {
   exit: string | null;
   workingMinutes: number;
   status: AttendanceStatus;
+};
+
+export type ScheduledAttendanceStatus = {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employee: string;
+  department: string;
+  date: string;
+  status: "REMOTE" | "ON_LEAVE";
 };
 
 export type Device = {

@@ -211,6 +211,142 @@ export class ReportsService {
     };
   }
 
+  async getPayrollReport(user: CurrentUser, query: MonthlyReportQueryDto) {
+    const scope = this.resolveScope(user, query.organizationId);
+    const currentShiftDateKey = await this.getCurrentShiftDateKey(
+      scope.organizationId,
+    );
+    const month = query.month
+      ? await this.normalizeMonthKey(query.month)
+      : this.getPayrollCycleMonth(currentShiftDateKey);
+    const { from, to, cycleStart, cycleEnd } =
+      this.getPayrollCycleWindow(month);
+    const currentShiftDate = this.toDatabaseDate(currentShiftDateKey);
+    const attendanceCutoff =
+      currentShiftDate < from
+        ? from
+        : currentShiftDate >= to
+          ? to
+          : this.addDays(currentShiftDate, 1);
+    const [employees, attendance] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: {
+          isActive: true,
+          ...(scope.organizationId
+            ? { organizationId: scope.organizationId }
+            : {}),
+          ...(scope.employeeId ? { id: scope.employeeId } : {}),
+        },
+        include: { department: true },
+        orderBy: { employeeCode: 'asc' },
+      }),
+      this.prisma.dailyAttendance.findMany({
+        where: {
+          ...this.createAttendanceWhere(scope),
+          date: { gte: from, lt: attendanceCutoff },
+        },
+      }),
+    ]);
+    const attendanceByEmployeeDate = new Map(
+      attendance.map((record) => [
+        `${record.employeeId}:${this.toDateKey(record.date)}`,
+        record,
+      ]),
+    );
+    const workingDateKeys = this.getWeekdayDateKeys(from, to);
+    const assessedDateKeys = this.getWeekdayDateKeys(from, attendanceCutoff);
+    const rows = employees.map((employee) => {
+      let absentDays = 0;
+      let halfDays = 0;
+      let presentDays = 0;
+      const attendanceDetails: Array<{
+        date: string;
+        day: string;
+        status: 'ABSENT' | 'HALF_DAY';
+      }> = [];
+
+      for (const dateKey of assessedDateKeys) {
+        const record = attendanceByEmployeeDate.get(
+          `${employee.id}:${dateKey}`,
+        );
+        const status = record?.statusOverride ?? record?.status;
+
+        if (!status || status === AttendanceStatus.ABSENT) {
+          absentDays += 1;
+          attendanceDetails.push({
+            date: dateKey,
+            day: this.getWeekdayName(dateKey),
+            status: 'ABSENT',
+          });
+        } else if (status === AttendanceStatus.HALF_DAY) {
+          halfDays += 1;
+          attendanceDetails.push({
+            date: dateKey,
+            day: this.getWeekdayName(dateKey),
+            status: 'HALF_DAY',
+          });
+        } else if (PRESENT_STATUSES.has(status)) {
+          presentDays += 1;
+        }
+      }
+
+      const monthlySalary = Number(employee.monthlySalary);
+      const dailyRate = workingDateKeys.length
+        ? monthlySalary / workingDateKeys.length
+        : 0;
+      const halfDayDeductionDays = Math.floor(halfDays / 3);
+      const totalDeductionDays = absentDays + halfDayDeductionDays;
+      const deductionAmount = Math.min(
+        monthlySalary,
+        dailyRate * totalDeductionDays,
+      );
+
+      return {
+        employeeId: employee.id,
+        employeeCode: employee.employeeCode,
+        employee: employee.name,
+        department: employee.department?.name ?? 'Unassigned',
+        monthlySalary: this.roundMoney(monthlySalary),
+        workingDays: workingDateKeys.length,
+        assessedWorkingDays: assessedDateKeys.length,
+        dailyRate: this.roundMoney(dailyRate),
+        presentDays,
+        absentDays,
+        halfDays,
+        halfDayDeductionDays,
+        totalDeductionDays,
+        deductionAmount: this.roundMoney(deductionAmount),
+        payableSalary: this.roundMoney(monthlySalary - deductionAmount),
+        attendanceDetails,
+      };
+    });
+
+    return {
+      month,
+      cycleStart,
+      cycleEnd,
+      calculatedThrough:
+        attendanceCutoff > from
+          ? this.toDateKey(this.addDays(attendanceCutoff, -1))
+          : null,
+      workingDays: workingDateKeys.length,
+      rule: 'Payroll runs from the 25th through the following month’s 25th; each absent weekday deducts 1 daily salary; every 3 half days deduct 1 daily salary; Saturdays and Sundays are off.',
+      summary: {
+        employees: rows.length,
+        grossSalary: this.roundMoney(
+          rows.reduce((total, row) => total + row.monthlySalary, 0),
+        ),
+        deductions: this.roundMoney(
+          rows.reduce((total, row) => total + row.deductionAmount, 0),
+        ),
+        payableSalary: this.roundMoney(
+          rows.reduce((total, row) => total + row.payableSalary, 0),
+        ),
+      },
+      rows,
+    };
+  }
+
   async getAttendanceExport(
     user: CurrentUser,
     query: DateRangeReportQueryDto,
@@ -790,6 +926,35 @@ export class ReportsService {
     };
   }
 
+  private getPayrollCycleMonth(currentShiftDateKey: string) {
+    const day = Number(currentShiftDateKey.slice(8, 10));
+
+    if (day >= 25) {
+      return currentShiftDateKey.slice(0, 7);
+    }
+
+    const currentMonthStart = this.toDatabaseDate(
+      `${currentShiftDateKey.slice(0, 7)}-01`,
+    );
+    currentMonthStart.setUTCMonth(currentMonthStart.getUTCMonth() - 1);
+    return this.toDateKey(currentMonthStart).slice(0, 7);
+  }
+
+  private getPayrollCycleWindow(monthKey: string) {
+    const from = this.toDatabaseDate(`${monthKey}-25`);
+    const cycleEndDate = this.toDatabaseDate(`${monthKey}-25`);
+    cycleEndDate.setUTCMonth(cycleEndDate.getUTCMonth() + 1);
+    const cycleStart = this.toDateKey(from);
+    const cycleEnd = this.toDateKey(cycleEndDate);
+
+    return {
+      from,
+      to: this.addDays(cycleEndDate, 1),
+      cycleStart,
+      cycleEnd,
+    };
+  }
+
   private toDatabaseDate(dateKey: string) {
     return new Date(`${dateKey}T00:00:00.000Z`);
   }
@@ -802,6 +967,31 @@ export class ReportsService {
     const next = new Date(date);
     next.setUTCDate(next.getUTCDate() + days);
     return next;
+  }
+
+  private getWeekdayDateKeys(from: Date, to: Date) {
+    const dates: string[] = [];
+
+    for (let date = from; date < to; date = this.addDays(date, 1)) {
+      const weekday = date.getUTCDay();
+
+      if (weekday !== 0 && weekday !== 6) {
+        dates.push(this.toDateKey(date));
+      }
+    }
+
+    return dates;
+  }
+
+  private roundMoney(value: number) {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  private getWeekdayName(dateKey: string) {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      weekday: 'long',
+    }).format(this.toDatabaseDate(dateKey));
   }
 
   private formatTime(date: Date, timeZone: string) {

@@ -7,6 +7,7 @@ import { MetricCard } from "@/components/dashboard/metric-card";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportCharts } from "@/components/reports/report-charts";
 import { LateArrivalsTable, OvertimeTable } from "@/components/reports/report-tables";
+import { PayrollReportPanel } from "@/components/reports/payroll-report";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { useDailyReport, useLateArrivalsReport, useMonthlyReport, useOvertimeReport, useReportAnalytics } from "@/hooks/use-reports";
@@ -194,6 +195,8 @@ export default function ReportsPage() {
         </Panel>
 
         <ReportCharts analytics={analytics.data} />
+
+        <PayrollReportPanel />
 
         <div className="grid gap-4 xl:grid-cols-2">
           <LateArrivalsTable rows={lateArrivals.data?.rows ?? []} />

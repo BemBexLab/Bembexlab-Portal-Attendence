@@ -1,4 +1,4 @@
-import { Body, Controller, Param, ParseUUIDPipe, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
 import { CurrentUserDecorator } from '../auth/decorators/current-user.decorator';
@@ -8,12 +8,26 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import type { CurrentUser } from '../auth/types/current-user.type';
 import { AttendanceService } from './attendance.service';
 import { UpdateAttendanceStatusDto } from './dto/update-attendance-status.dto';
+import { BulkAttendanceStatusDto } from './dto/bulk-attendance-status.dto';
 
 @Controller('attendance')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
+
+  @Get('scheduled-statuses')
+  getScheduledStatuses(@CurrentUserDecorator() user: CurrentUser) {
+    return this.attendanceService.getScheduledStatuses(user);
+  }
+
+  @Post('bulk-status')
+  assignBulkStatus(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Body() dto: BulkAttendanceStatusDto,
+  ) {
+    return this.attendanceService.assignBulkStatus(user, dto);
+  }
 
   @Patch(':employeeId/:date/status')
   updateStatus(

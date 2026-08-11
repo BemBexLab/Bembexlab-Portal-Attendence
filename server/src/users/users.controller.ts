@@ -8,6 +8,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import type { CurrentUser } from '../auth/types/current-user.type';
 import { UsersService } from './users.service';
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
+import { UpdateEmployeeSalaryDto } from './dto/update-employee-salary.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,5 +34,19 @@ export class UsersController {
     @Body() dto: UpdateEmployeeStatusDto,
   ) {
     return this.usersService.updateEmployeeStatus(user, id, dto.isActive);
+  }
+
+  @Patch('employees/:id/salary')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
+  updateEmployeeSalary(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEmployeeSalaryDto,
+  ) {
+    return this.usersService.updateEmployeeSalary(
+      user,
+      id,
+      dto.monthlySalary,
+    );
   }
 }

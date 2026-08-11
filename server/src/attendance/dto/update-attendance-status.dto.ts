@@ -7,6 +7,7 @@ const MANUAL_ATTENDANCE_STATUSES = [
   AttendanceStatus.PRESENT,
   AttendanceStatus.HALF_DAY,
   AttendanceStatus.REMOTE,
+  AttendanceStatus.ON_LEAVE,
 ] as const;
 
 export class UpdateAttendanceStatusDto {
