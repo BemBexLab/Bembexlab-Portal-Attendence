@@ -45,6 +45,7 @@ export class AttendanceService {
     }
 
     const date = dateKeyToDatabaseDate(dateKey);
+    const databaseNow = await this.prisma.databaseNow();
     const existingAttendance = await this.prisma.dailyAttendance.findUnique({
       where: { employeeId_date: { employeeId, date } },
       select: { lastCheckOut: true },
@@ -53,6 +54,7 @@ export class AttendanceService {
     const automaticCheckout = [
       'PRESENT',
       'HALF_DAY',
+      'MISSING_CHECKOUT',
     ].includes(dto.status)
       ? shiftEnd
       : undefined;
@@ -63,9 +65,9 @@ export class AttendanceService {
       where: { employeeId_date: { employeeId, date } },
       update: {
         statusOverride: dto.status,
-        statusOverrideAt: new Date(),
+        statusOverrideAt: databaseNow,
         statusOverrideBy: user.id,
-        ...(automaticCheckout && automaticCheckout <= new Date()
+        ...(automaticCheckout && automaticCheckout <= databaseNow
           ? { lastCheckOut: automaticCheckout }
           : {}),
         ...(removePreviousAutomaticCheckout ? { lastCheckOut: null } : {}),
@@ -76,9 +78,9 @@ export class AttendanceService {
         date,
         status: dto.status,
         statusOverride: dto.status,
-        statusOverrideAt: new Date(),
+        statusOverrideAt: databaseNow,
         statusOverrideBy: user.id,
-        ...(automaticCheckout && automaticCheckout <= new Date()
+        ...(automaticCheckout && automaticCheckout <= databaseNow
           ? { lastCheckOut: automaticCheckout }
           : {}),
       },

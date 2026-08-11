@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarDays, ChevronDown, Download, Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AttendanceStatusBadge } from "@/components/attendance/status-badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
@@ -40,44 +40,41 @@ function formatStatus(status: AttendanceStatus) {
     .join(" ");
 }
 
-function getPakistanOperationalDate() {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Karachi",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-  const date = `${value("year")}-${value("month")}-${value("day")}`;
-
-  if (Number(value("hour")) >= 21) {
-    return date;
+function shiftDate(date: string, days: number) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return "";
   }
 
-  return shiftDate(date, -1);
-}
-
-function shiftDate(date: string, days: number) {
   const value = new Date(`${date}T00:00:00.000Z`);
+
+  if (Number.isNaN(value.getTime())) {
+    return "";
+  }
+
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 }
 
 export function AttendanceTable() {
-  const currentDate = getPakistanOperationalDate();
-  const [selectedDate, setSelectedDate] = useState(currentDate);
-  const attendance = useAttendanceRows(selectedDate);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [operationalDate, setOperationalDate] = useState("");
+  const attendance = useAttendanceRows(selectedDate || undefined);
+  const currentDate = operationalDate;
+  const previousDate = currentDate ? shiftDate(currentDate, -1) : "";
   const updateStatus = useUpdateAttendanceStatus();
   const [openStatusId, setOpenStatusId] = useState<string | null>(null);
   const search = useDashboardStore((state) => state.attendanceSearch);
   const department = useDashboardStore((state) => state.departmentFilter);
   const setSearch = useDashboardStore((state) => state.setAttendanceSearch);
   const setDepartment = useDashboardStore((state) => state.setDepartmentFilter);
-  const rows = attendance.data ?? [];
+  const rows = attendance.data?.rows ?? [];
+
+  useEffect(() => {
+    if (!operationalDate && attendance.data?.date) {
+      setOperationalDate(attendance.data.date);
+      setSelectedDate(attendance.data.date);
+    }
+  }, [attendance.data?.date, operationalDate]);
   const departments = [
     "All departments",
     ...Array.from(new Set(rows.map((row) => row.department))),
@@ -117,13 +114,19 @@ export function AttendanceTable() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
-            onClick={() => setSelectedDate(shiftDate(currentDate, -1))}
+            disabled={!currentDate}
+            onClick={() => setSelectedDate(previousDate)}
             type="button"
-            variant={selectedDate === shiftDate(currentDate, -1) ? "primary" : "secondary"}
+            variant={
+              previousDate && selectedDate === previousDate
+                ? "primary"
+                : "secondary"
+            }
           >
             Previous
           </Button>
           <Button
+            disabled={!currentDate}
             onClick={() => setSelectedDate(currentDate)}
             type="button"
             variant={selectedDate === currentDate ? "primary" : "secondary"}
@@ -134,7 +137,7 @@ export function AttendanceTable() {
             <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               className="h-9 rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20"
-              max={currentDate}
+              max={currentDate || undefined}
               onChange={(event) => setSelectedDate(event.target.value)}
               type="date"
               value={selectedDate}

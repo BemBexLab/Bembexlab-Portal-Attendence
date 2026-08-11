@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarDays, Clock3, Download, Timer, UserCheck, UserX } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AppShell } from "@/components/layout/app-shell";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { useDailyReport, useLateArrivalsReport, useMonthlyReport, useOvertimeReport, useReportAnalytics } from "@/hooks/use-reports";
 import { downloadCsv } from "@/lib/csv";
+import { getAttendanceExport } from "@/services/report-service";
 
 function formatHours(minutes: number) {
   const hours = Math.floor(minutes / 60);
@@ -37,25 +39,56 @@ export default function ReportsPage() {
   const analytics = useReportAnalytics();
   const daily = dailyReport.data;
   const monthly = monthlyReport.data;
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
-  const exportDailyReport = () => {
-    if (!daily?.rows.length) {
+  useEffect(() => {
+    if (!analytics.data || startDate || endDate) {
       return;
     }
 
+    setStartDate(analytics.data.from);
+    setEndDate(analytics.data.to);
+  }, [analytics.data, endDate, startDate]);
+
+  const exportAttendanceReport = async () => {
+    if (!startDate || !endDate || startDate > endDate) {
+      setExportError("Choose a valid start and end date.");
+      return;
+    }
+
+    setIsExporting(true);
+    setExportError(null);
+
+    try {
+      const report = await getAttendanceExport(startDate, endDate);
+
+      if (!report.rows.length) {
+        setExportError("No attendance data is available for this period.");
+        return;
+      }
+
     downloadCsv(
-      `daily-attendance-${daily.date}.csv`,
-      daily.rows.map((row) => ({
+        `attendance-${report.from}-to-${report.to}.csv`,
+        report.rows.map((row) => ({
         date: row.date,
         employeeCode: row.employeeCode,
         employee: row.employee,
         department: row.department,
+          organization: row.organization,
         arrival: formatTime(row.firstCheckIn),
         exit: formatTime(row.lastCheckOut),
         workingHours: formatHours(row.workingMinutes),
         status: row.status,
       })),
     );
+    } catch {
+      setExportError("The attendance report could not be exported.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -105,17 +138,42 @@ export default function ReportsPage() {
                 Daily, monthly, late arrival, and overtime reporting.
               </p>
             </div>
-            <Button
-              disabled={!daily?.rows.length}
-              onClick={exportDailyReport}
-              type="button"
-              variant="primary"
-            >
-              <Download className="size-4" />
-              CSV
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <label className="text-xs text-muted-foreground">
+                Start date
+                <input
+                  className="mt-1 block h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/20"
+                  max={endDate || undefined}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  type="date"
+                  value={startDate}
+                />
+              </label>
+              <label className="text-xs text-muted-foreground">
+                End date
+                <input
+                  className="mt-1 block h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/20"
+                  min={startDate || undefined}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  type="date"
+                  value={endDate}
+                />
+              </label>
+              <Button
+                disabled={isExporting || !startDate || !endDate}
+                onClick={exportAttendanceReport}
+                type="button"
+                variant="primary"
+              >
+                <Download className="size-4" />
+                {isExporting ? "Exporting..." : "Export report"}
+              </Button>
+            </div>
           </PanelHeader>
           <PanelBody>
+            {exportError ? (
+              <p className="mb-3 text-sm text-red-600">{exportError}</p>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <p className="text-xs text-muted-foreground">Period</p>

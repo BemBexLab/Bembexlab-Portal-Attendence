@@ -65,7 +65,9 @@ export class ZKTecoService {
     });
   }
 
-  async getAttendancePunches(target: ZktecoConnectionTarget) {
+  async getAttendancePunches(
+    target: ZktecoConnectionTarget,
+  ): Promise<NormalizedAttendancePunch[]> {
     return this.withConnection(target, async (client) => {
       const response = await client.getAttendances();
 
@@ -83,7 +85,9 @@ export class ZKTecoService {
     });
   }
 
-  async getUsers(target: ZktecoConnectionTarget) {
+  async getUsers(
+    target: ZktecoConnectionTarget,
+  ): Promise<NormalizedZktecoUser[]> {
     return this.withConnection(target, async (client) => {
       const response = await client.getUsers();
 

@@ -83,9 +83,14 @@ export class UsersService {
       throw new ForbiddenException('Cannot update another organization');
     }
 
+    const databaseNow = isActive ? await this.prisma.databaseNow() : null;
+
     return this.prisma.employee.update({
       where: { id: employee.id },
-      data: { isActive },
+      data: {
+        isActive,
+        attendanceTrackingSince: databaseNow,
+      },
       select: {
         id: true,
         employeeCode: true,

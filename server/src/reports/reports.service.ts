@@ -34,6 +34,19 @@ type ReportScope = {
   employeeId?: string;
 };
 
+type AttendanceExportRow = {
+  date: string;
+  employeeId: string;
+  employeeCode: string;
+  employee: string;
+  department: string;
+  organization: string;
+  firstCheckIn: string | null;
+  lastCheckOut: string | null;
+  workingMinutes: number;
+  status: AttendanceStatus;
+};
+
 @Injectable()
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -95,7 +108,7 @@ export class ReportsService {
   }
 
   async getMonthlyReport(user: CurrentUser, query: MonthlyReportQueryDto) {
-    const monthKey = this.normalizeMonthKey(query.month);
+    const monthKey = await this.normalizeMonthKey(query.month);
     const { from, to } = this.getMonthWindow(monthKey);
     const scope = this.resolveScope(user, query.organizationId);
     const records = await this.prisma.dailyAttendance.findMany({
@@ -198,6 +211,77 @@ export class ReportsService {
     };
   }
 
+  async getAttendanceExport(
+    user: CurrentUser,
+    query: DateRangeReportQueryDto,
+  ) {
+    if (!query.from || !query.to) {
+      throw new BadRequestException('from and to dates are required');
+    }
+
+    const scope = this.resolveScope(user, query.organizationId);
+    const { from, to } = await this.normalizeRange(query.from, query.to);
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        isActive: true,
+        ...(scope.organizationId
+          ? { organizationId: scope.organizationId }
+          : {}),
+        ...(scope.employeeId ? { id: scope.employeeId } : {}),
+      },
+      include: {
+        department: true,
+        organization: true,
+      },
+      orderBy: { employeeCode: 'asc' },
+    });
+    const records = await this.prisma.dailyAttendance.findMany({
+      where: {
+        ...this.createAttendanceWhere(scope),
+        date: { gte: from, lt: to },
+      },
+    });
+    const recordsByEmployeeDate = new Map(
+      records.map((record) => [
+        `${record.employeeId}:${this.toDateKey(record.date)}`,
+        record,
+      ]),
+    );
+    const rows: AttendanceExportRow[] = [];
+
+    for (let date = from; date < to; date = this.addDays(date, 1)) {
+      const dateKey = this.toDateKey(date);
+
+      for (const employee of employees) {
+        const record = recordsByEmployeeDate.get(
+          `${employee.id}:${dateKey}`,
+        );
+
+        rows.push({
+          date: dateKey,
+          employeeId: employee.id,
+          employeeCode: employee.employeeCode,
+          employee: employee.name,
+          department: employee.department?.name ?? 'Unassigned',
+          organization: employee.organization.name,
+          firstCheckIn: record?.firstCheckIn?.toISOString() ?? null,
+          lastCheckOut: record?.lastCheckOut?.toISOString() ?? null,
+          workingMinutes: record?.workingMinutes ?? 0,
+          status:
+            record?.statusOverride ??
+            record?.status ??
+            AttendanceStatus.ABSENT,
+        });
+      }
+    }
+
+    return {
+      from: this.toDateKey(from),
+      to: this.toDateKey(this.addDays(to, -1)),
+      rows,
+    };
+  }
+
   async getEmployeeHistory(
     user: CurrentUser,
     employeeId: string,
@@ -209,7 +293,7 @@ export class ReportsService {
       throw new ForbiddenException('Cannot view another employee history');
     }
 
-    const { from, to } = this.normalizeRange(query.from, query.to);
+    const { from, to } = await this.normalizeRange(query.from, query.to);
     const employee = await this.prisma.employee.findFirst({
       where: {
         id: employeeId,
@@ -263,7 +347,7 @@ export class ReportsService {
   async getLateArrivals(user: CurrentUser, query: LateArrivalsReportQueryDto) {
     const scope = this.resolveScope(user, query.organizationId);
     const threshold = query.threshold ?? DEFAULT_LATE_THRESHOLD;
-    const { from, to } = this.normalizeRange(query.from, query.to);
+    const { from, to } = await this.normalizeRange(query.from, query.to);
     const records = await this.getRangeRecords(scope, from, to);
     const rows = records
       .filter((record) => record.firstCheckIn)
@@ -308,7 +392,7 @@ export class ReportsService {
   async getOvertime(user: CurrentUser, query: OvertimeReportQueryDto) {
     const scope = this.resolveScope(user, query.organizationId);
     const minimumMinutes = query.minimumMinutes ?? DEFAULT_OVERTIME_MINUTES;
-    const { from, to } = this.normalizeRange(query.from, query.to);
+    const { from, to } = await this.normalizeRange(query.from, query.to);
     const records = await this.getRangeRecords(scope, from, to);
     const rows = records
       .filter((record) => record.workingMinutes > minimumMinutes)
@@ -342,8 +426,20 @@ export class ReportsService {
 
   async getAnalytics(user: CurrentUser, query: DateRangeReportQueryDto) {
     const scope = this.resolveScope(user, query.organizationId);
-    const { from, to } = this.normalizeRange(query.from, query.to);
-    const records = await this.getRangeRecords(scope, from, to);
+    const { from, to } = await this.normalizeRange(query.from, query.to);
+    const [records, employees] = await Promise.all([
+      this.getRangeRecords(scope, from, to),
+      this.prisma.employee.findMany({
+        where: {
+          isActive: true,
+          ...(scope.organizationId
+            ? { organizationId: scope.organizationId }
+            : {}),
+          ...(scope.employeeId ? { id: scope.employeeId } : {}),
+        },
+        include: { department: true },
+      }),
+    ]);
     const trends = new Map<
       string,
       {
@@ -370,6 +466,42 @@ export class ReportsService {
         rows: number;
       }
     >();
+    let daysInRange = 0;
+
+    for (let date = from; date < to; date = this.addDays(date, 1)) {
+      const dateKey = this.toDateKey(date);
+      trends.set(dateKey, {
+        date: dateKey,
+        present: 0,
+        absent: employees.length,
+        late: 0,
+        overtimeHours: 0,
+        averageWorkingHours: 0,
+        totalWorkingMinutes: 0,
+        rows: 0,
+      });
+      daysInRange += 1;
+    }
+
+    const employeeCountByDepartment = new Map<string, number>();
+
+    for (const employee of employees) {
+      const departmentName = employee.department?.name ?? 'Unassigned';
+      employeeCountByDepartment.set(
+        departmentName,
+        (employeeCountByDepartment.get(departmentName) ?? 0) + 1,
+      );
+      departments.set(departmentName, {
+        department: departmentName,
+        present: 0,
+        absent: 0,
+        late: 0,
+        overtimeHours: 0,
+        averageWorkingHours: 0,
+        totalWorkingMinutes: 0,
+        rows: 0,
+      });
+    }
 
     for (const record of records) {
       const dateKey = this.toDateKey(record.date);
@@ -404,6 +536,19 @@ export class ReportsService {
       );
       trends.set(dateKey, trend);
       departments.set(departmentName, department);
+    }
+
+    for (const trend of trends.values()) {
+      trend.absent = Math.max(0, employees.length - trend.present);
+    }
+
+    for (const department of departments.values()) {
+      const employeeCount =
+        employeeCountByDepartment.get(department.department) ?? 0;
+      department.absent = Math.max(
+        0,
+        employeeCount * daysInRange - department.present,
+      );
     }
 
     const finalize = <
@@ -547,7 +692,7 @@ export class ReportsService {
           select: { timezone: true },
         });
     const timezone = organization?.timezone || 'Asia/Karachi';
-    const now = new Date();
+    const now = await this.prisma.databaseNow();
     const time = getTimePartsInTimeZone(now, timezone);
     const dateKey = getDateKeyInTimeZone(now, timezone);
 
@@ -584,8 +729,13 @@ export class ReportsService {
     };
   }
 
-  private normalizeRange(from?: string, to?: string) {
-    const fallbackTo = this.toDatabaseDate(this.normalizeDateKey());
+  private async normalizeRange(from?: string, to?: string) {
+    const databaseNow = await this.prisma.databaseNow();
+    const fallbackDateKey = getDateKeyInTimeZone(
+      databaseNow,
+      'Asia/Karachi',
+    );
+    const fallbackTo = this.toDatabaseDate(fallbackDateKey);
     const fallbackFrom = this.addDays(fallbackTo, -6);
     const fromDate = from
       ? this.toDatabaseDate(this.normalizeDateKey(from))
@@ -604,8 +754,8 @@ export class ReportsService {
     };
   }
 
-  private normalizeDateKey(date?: string) {
-    const value = date ?? new Date().toISOString().slice(0, 10);
+  private normalizeDateKey(date: string) {
+    const value = date;
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
       throw new BadRequestException('Date must use YYYY-MM-DD');
@@ -614,8 +764,13 @@ export class ReportsService {
     return value;
   }
 
-  private normalizeMonthKey(month?: string) {
-    const value = month ?? new Date().toISOString().slice(0, 7);
+  private async normalizeMonthKey(month?: string) {
+    const value =
+      month ??
+      getDateKeyInTimeZone(
+        await this.prisma.databaseNow(),
+        'Asia/Karachi',
+      ).slice(0, 7);
 
     if (!/^\d{4}-\d{2}$/.test(value)) {
       throw new BadRequestException('Month must use YYYY-MM');

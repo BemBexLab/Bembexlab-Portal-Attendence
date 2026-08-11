@@ -11,6 +11,7 @@ import {
 } from './types/attendance-processing.types';
 import {
   dateKeyToDatabaseDate,
+  getDateKeyInTimeZone,
   getNightShiftDateKey,
   getLooseUtcWindowForDateKey,
   getPakistanShiftEnd,
@@ -81,7 +82,82 @@ export class AttendanceProcessingService {
       }
     }
 
+    await this.enforceTwoMonthRetention();
+
     return result;
+  }
+
+  async enforceTwoMonthRetention() {
+    const now = await this.prisma.databaseNow();
+    const { retainedDateKey, dailyCutoff, punchCutoff } =
+      this.getRetentionCutoffs(now);
+
+    const [dailyAttendance, attendanceLogs] = await this.prisma.$transaction([
+      this.prisma.dailyAttendance.deleteMany({
+        where: { date: { lt: dailyCutoff } },
+      }),
+      this.prisma.attendanceLog.deleteMany({
+        where: { punchTime: { lt: punchCutoff } },
+      }),
+    ]);
+
+    if (dailyAttendance.count > 0 || attendanceLogs.count > 0) {
+      this.logger.log(
+        `Attendance retention removed ${dailyAttendance.count} daily rows and ${attendanceLogs.count} raw punches older than ${retainedDateKey}`,
+      );
+    }
+
+    return {
+      retainedFrom: retainedDateKey,
+      dailyAttendanceDeleted: dailyAttendance.count,
+      attendanceLogsDeleted: attendanceLogs.count,
+    };
+  }
+
+  async rebuildDailyAttendanceFromStoredPunches() {
+    const databaseNow = await this.prisma.databaseNow();
+    const logs = await this.prisma.attendanceLog.findMany({
+      where: { employee: { isActive: true } },
+      select: {
+        employeeId: true,
+        organizationId: true,
+        punchTime: true,
+        organization: { select: { timezone: true } },
+      },
+      orderBy: { punchTime: 'asc' },
+    });
+    const affectedDays = new Map<string, AffectedAttendanceDay>();
+
+    for (const log of logs) {
+      const timezone = log.organization.timezone || 'Asia/Karachi';
+      const time = getTimePartsInTimeZone(log.punchTime, timezone);
+      const minutes = time.hour * 60 + time.minute;
+
+      if (minutes < SHIFT_START_MINUTES && minutes > SHIFT_END_MINUTES) {
+        continue;
+      }
+
+      const dateKey = getNightShiftDateKey(log.punchTime, timezone);
+      affectedDays.set(`${log.employeeId}:${dateKey}`, {
+        employeeId: log.employeeId,
+        organizationId: log.organizationId,
+        dateKey,
+        timezone,
+      });
+    }
+
+    const days = [...affectedDays.values()];
+    const batchSize = 20;
+
+    for (let index = 0; index < days.length; index += batchSize) {
+      await Promise.all(
+        days
+          .slice(index, index + batchSize)
+          .map((day) => this.calculateDailyAttendance(day, databaseNow)),
+      );
+    }
+
+    return { recalculated: days.length };
   }
 
   async processDevice(deviceId: string): Promise<ProcessedDeviceResult> {
@@ -94,52 +170,66 @@ export class AttendanceProcessingService {
       },
     });
     const timezone = device.organization.timezone || 'UTC';
+    const databaseNow = await this.prisma.databaseNow();
 
     try {
       const deviceUsers = await this.zktecoService.getUsers(device);
+      const existingEmployees = await this.prisma.employee.findMany({
+        where: {
+          organizationId: device.organizationId,
+          deviceUserId: { in: deviceUsers.map((user) => user.deviceUserId) },
+        },
+        select: { id: true, deviceUserId: true, name: true },
+      });
+      const existingEmployeeByDeviceUserId = new Map(
+        existingEmployees.map((employee) => [employee.deviceUserId, employee]),
+      );
+      const missingUsers = deviceUsers.filter(
+        (user) => !existingEmployeeByDeviceUserId.has(user.deviceUserId),
+      );
 
-      for (const deviceUser of deviceUsers) {
-        const existing = await this.prisma.employee.findUnique({
-          where: {
-            organizationId_deviceUserId: {
-              organizationId: device.organizationId,
-              deviceUserId: deviceUser.deviceUserId,
-            },
-          },
-          select: {
-            id: true,
-            name: true,
-          },
-        });
-
-        if (existing) {
-          if (deviceUser.name && existing.name !== deviceUser.name) {
-            await this.prisma.employee.update({
-              where: { id: existing.id },
-              data: { name: deviceUser.name },
-            });
-          }
-          continue;
-        }
-
-        await this.prisma.employee.create({
-          data: {
+      if (missingUsers.length > 0) {
+        await this.prisma.employee.createMany({
+          data: missingUsers.map((deviceUser) => ({
             organizationId: device.organizationId,
             employeeCode: `ZKT-${deviceUser.deviceUserId}`,
             deviceUserId: deviceUser.deviceUserId,
             name: deviceUser.name ?? `K40 User ${deviceUser.deviceUserId}`,
             isActive: true,
-          },
+          })),
+          skipDuplicates: true,
         });
       }
 
-      const punches = await this.zktecoService.getAttendancePunches(device);
+      await Promise.all(
+        deviceUsers.flatMap((deviceUser) => {
+          const existing = existingEmployeeByDeviceUserId.get(
+            deviceUser.deviceUserId,
+          );
+
+          return existing && deviceUser.name && existing.name !== deviceUser.name
+            ? [
+                this.prisma.employee.update({
+                  where: { id: existing.id },
+                  data: { name: deviceUser.name },
+                }),
+              ]
+            : [];
+        }),
+      );
+
+      const fetchedPunches = await this.zktecoService.getAttendancePunches(device);
+      const { punchCutoff } = this.getRetentionCutoffs(databaseNow);
+      const punches = fetchedPunches.filter(
+        (punch) => punch.punchTime >= punchCutoff,
+      );
       const deviceUserIds = Array.from(
         new Set(punches.map((punch) => punch.deviceUserId)),
       );
       const employees = await this.prisma.employee.findMany({
         where: {
           organizationId: device.organizationId,
+          isActive: true,
           deviceUserId: {
             in: deviceUserIds,
           },
@@ -147,20 +237,31 @@ export class AttendanceProcessingService {
         select: {
           id: true,
           deviceUserId: true,
+          attendanceTrackingSince: true,
         },
       });
       const employeeByDeviceUserId = new Map(
         employees
           .filter((employee) => employee.deviceUserId)
-          .map((employee) => [employee.deviceUserId as string, employee.id]),
+          .map((employee) => [employee.deviceUserId as string, employee]),
       );
+      const latestStoredLog = await this.prisma.attendanceLog.findFirst({
+        where: { deviceId: device.id },
+        orderBy: { punchTime: 'desc' },
+        select: { punchTime: true },
+      });
       const affectedDays = new Map<string, AffectedAttendanceDay>();
       const rawLogs = punches.flatMap((punch) => {
-        const employeeId = employeeByDeviceUserId.get(punch.deviceUserId);
+        const employee = employeeByDeviceUserId.get(punch.deviceUserId);
 
-        if (!employeeId) {
+        if (
+          !employee ||
+          (employee.attendanceTrackingSince &&
+            punch.punchTime < employee.attendanceTrackingSince)
+        ) {
           return [];
         }
+        const employeeId = employee.id;
 
         const punchTime = getTimePartsInTimeZone(punch.punchTime, timezone);
         const punchMinutes = punchTime.hour * 60 + punchTime.minute;
@@ -178,13 +279,18 @@ export class AttendanceProcessingService {
           };
         }
 
-        const dateKey = getNightShiftDateKey(punch.punchTime, timezone);
-        affectedDays.set(`${employeeId}:${dateKey}`, {
-          employeeId,
-          organizationId: device.organizationId,
-          dateKey,
-          timezone,
-        });
+        if (
+          !latestStoredLog ||
+          punch.punchTime >= latestStoredLog.punchTime
+        ) {
+          const dateKey = getNightShiftDateKey(punch.punchTime, timezone);
+          affectedDays.set(`${employeeId}:${dateKey}`, {
+            employeeId,
+            organizationId: device.organizationId,
+            dateKey,
+            timezone,
+          });
+        }
 
         return {
           organizationId: device.organizationId,
@@ -201,11 +307,17 @@ export class AttendanceProcessingService {
               skipDuplicates: true,
             })
           : { count: 0 };
+      if (createResult.count === 0) {
+        affectedDays.clear();
+      }
       let dailyCalculated = 0;
       const dailyAttendance: AttendanceUpdatedPayload['dailyAttendance'] = [];
 
       for (const affectedDay of affectedDays.values()) {
-        const dailyRecord = await this.calculateDailyAttendance(affectedDay);
+        const dailyRecord = await this.calculateDailyAttendance(
+          affectedDay,
+          databaseNow,
+        );
         dailyAttendance.push({
           employeeId: dailyRecord.employeeId,
           date: dailyRecord.date.toISOString().slice(0, 10),
@@ -223,7 +335,7 @@ export class AttendanceProcessingService {
         },
         data: {
           status: DeviceStatus.ACTIVE,
-          lastSync: new Date(),
+          lastSync: databaseNow,
         },
       });
 
@@ -233,7 +345,7 @@ export class AttendanceProcessingService {
         ip: device.ip,
         port: device.port,
         status: DeviceStatus.ACTIVE,
-        emittedAt: new Date().toISOString(),
+        emittedAt: databaseNow.toISOString(),
       });
 
       if (createResult.count > 0) {
@@ -246,7 +358,7 @@ export class AttendanceProcessingService {
           unmatched: punches.length - rawLogs.length,
           dailyCalculated,
           dailyAttendance,
-          emittedAt: new Date().toISOString(),
+          emittedAt: databaseNow.toISOString(),
         });
       }
 
@@ -274,14 +386,17 @@ export class AttendanceProcessingService {
         ip: device.ip,
         port: device.port,
         status: DeviceStatus.OFFLINE,
-        emittedAt: new Date().toISOString(),
+        emittedAt: databaseNow.toISOString(),
       });
 
       throw error;
     }
   }
 
-  private async calculateDailyAttendance(day: AffectedAttendanceDay) {
+  private async calculateDailyAttendance(
+    day: AffectedAttendanceDay,
+    databaseNow: Date,
+  ) {
     const window = getLooseUtcWindowForDateKey(day.dateKey);
     const logs = await this.prisma.attendanceLog.findMany({
       where: {
@@ -344,9 +459,10 @@ export class AttendanceProcessingService {
     const automaticCheckoutStatuses = new Set<AttendanceStatus>([
       AttendanceStatus.PRESENT,
       AttendanceStatus.HALF_DAY,
+      AttendanceStatus.MISSING_CHECKOUT,
     ]);
     const finalCheckOut =
-      Date.now() >= shiftEnd.getTime() &&
+      databaseNow.getTime() >= shiftEnd.getTime() &&
       automaticCheckoutStatuses.has(effectiveStatus)
         ? shiftEnd
         : lastCheckOut;
@@ -383,6 +499,26 @@ export class AttendanceProcessingService {
         status,
       },
     });
+  }
+
+  private getRetentionCutoffs(now: Date) {
+    const pakistanDate = getDateKeyInTimeZone(now, 'Asia/Karachi');
+    const [year, month] = pakistanDate.split('-').map(Number);
+    const retainedMonthStart = new Date(Date.UTC(year, month - 2, 1));
+    const retainedDateKey = retainedMonthStart.toISOString().slice(0, 10);
+
+    return {
+      retainedDateKey,
+      dailyCutoff: dateKeyToDatabaseDate(retainedDateKey),
+      punchCutoff: new Date(
+        Date.UTC(
+          retainedMonthStart.getUTCFullYear(),
+          retainedMonthStart.getUTCMonth(),
+          1,
+        ) -
+          5 * 60 * 60 * 1000,
+      ),
+    };
   }
 
   private getErrorMessage(error: unknown) {

@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import type {
+  AttendanceExportReport,
   DailyReport,
   LateArrivalsReport,
   MonthlyReport,
@@ -33,4 +34,11 @@ export function getOvertimeReport() {
 
 export function getReportAnalytics() {
   return getReport<ReportAnalytics>("/reports/analytics");
+}
+
+export function getAttendanceExport(from: string, to: string) {
+  return getReport<AttendanceExportReport>("/reports/attendance-export", {
+    from,
+    to,
+  });
 }

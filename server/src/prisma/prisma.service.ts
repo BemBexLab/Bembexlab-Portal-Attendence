@@ -23,4 +23,16 @@ export class PrismaService
   async onModuleDestroy() {
     await this.$disconnect();
   }
+
+  async databaseNow() {
+    const [row] = await this.$queryRaw<Array<{ now: Date }>>`
+      SELECT CURRENT_TIMESTAMP AS "now"
+    `;
+
+    if (!row?.now) {
+      throw new Error('Database did not return its current timestamp');
+    }
+
+    return row.now;
+  }
 }

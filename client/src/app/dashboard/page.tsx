@@ -62,12 +62,10 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <AttendanceTrendChart />
-            <DepartmentChart />
-          </div>
-          <Panel>
+        <div className="grid items-start gap-4 xl:grid-cols-12">
+          <AttendanceTrendChart className="xl:col-span-7 xl:row-span-2" />
+          <DepartmentChart className="xl:col-span-5" />
+          <Panel className="min-w-0 overflow-hidden xl:col-span-5">
             <PanelHeader>
               <div>
                 <h2 className="text-sm font-semibold">Device health</h2>
@@ -77,21 +75,32 @@ export default function DashboardPage() {
               </div>
               <AlertTriangle className="size-4 text-muted-foreground" />
             </PanelHeader>
-            <PanelBody className="space-y-3">
+            <PanelBody className="space-y-2">
               {(devices.data ?? []).map((device) => (
                 <div
-                  className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-3 py-3"
                   key={device.id}
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{device.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="break-all text-xs text-muted-foreground">
                       {device.ip}:{device.port}
                     </p>
                   </div>
-                  <DeviceStatusBadge status={device.status} />
+                  <div className="shrink-0">
+                    <DeviceStatusBadge status={device.status} />
+                  </div>
                 </div>
               ))}
+              {!devices.data?.length ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  No K40 devices configured.
+                </p>
+              ) : null}
+              <div className="flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+                <span>{data?.activeDevices ?? 0} connected</span>
+                <span>{data?.offlineDevices ?? 0} offline</span>
+              </div>
             </PanelBody>
           </Panel>
         </div>

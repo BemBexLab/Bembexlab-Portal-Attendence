@@ -28,6 +28,7 @@ async function main() {
   const deviceName = process.env.SEED_DEVICE_NAME || 'K40 Main Gate';
   const deviceIp = process.env.SEED_DEVICE_IP || '192.168.10.197';
   const devicePort = Number(process.env.SEED_DEVICE_PORT || 4370);
+  const adminPasswordHash = await bcrypt.hash(adminPassword, 12);
 
   const organization =
     (await prisma.organization.findFirst({
@@ -70,11 +71,12 @@ async function main() {
       organizationId: organization.id,
       role: UserRole.ORG_ADMIN,
       isActive: true,
+      passwordHash: adminPasswordHash,
     },
     create: {
       name: adminName,
       email: adminEmail,
-      passwordHash: await bcrypt.hash(adminPassword, 12),
+      passwordHash: adminPasswordHash,
       role: UserRole.ORG_ADMIN,
       organizationId: organization.id,
     },

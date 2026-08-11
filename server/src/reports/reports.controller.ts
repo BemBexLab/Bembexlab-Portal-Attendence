@@ -49,6 +49,14 @@ export class ReportsController {
     return this.reportsService.getMonthlyReport(user, query);
   }
 
+  @Get('attendance-export')
+  attendanceExport(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Query() query: DateRangeReportQueryDto,
+  ) {
+    return this.reportsService.getAttendanceExport(user, query);
+  }
+
   @Get('employees/:employeeId/history')
   employeeHistory(
     @CurrentUserDecorator() user: CurrentUser,

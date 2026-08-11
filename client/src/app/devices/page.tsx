@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Fingerprint, RefreshCw, Wifi } from "lucide-react";
+import axios from "axios";
 
 import { DeviceStatusBadge } from "@/components/attendance/status-badge";
 import { AppShell } from "@/components/layout/app-shell";
@@ -26,15 +27,40 @@ export default function DevicesPage() {
   const [syncResults, setSyncResults] = useState<
     Record<string, DeviceSyncResult>
   >({});
+  const [deviceErrors, setDeviceErrors] = useState<Record<string, string>>({});
+
+  const getErrorMessage = (error: unknown) => {
+    if (axios.isAxiosError<{ message?: string }>(error)) {
+      return error.response?.data?.message ?? error.message;
+    }
+
+    return error instanceof Error ? error.message : "Request failed";
+  };
 
   const handleFetchInfo = async (deviceId: string) => {
-    const info = await fetchDeviceInfo.mutateAsync(deviceId);
-    setDeviceInfo((current) => ({ ...current, [deviceId]: info }));
+    setDeviceErrors((current) => ({ ...current, [deviceId]: "" }));
+    try {
+      const info = await fetchDeviceInfo.mutateAsync(deviceId);
+      setDeviceInfo((current) => ({ ...current, [deviceId]: info }));
+    } catch (error) {
+      setDeviceErrors((current) => ({
+        ...current,
+        [deviceId]: getErrorMessage(error),
+      }));
+    }
   };
 
   const handleSync = async (deviceId: string) => {
-    const result = await syncDeviceAttendance.mutateAsync(deviceId);
-    setSyncResults((current) => ({ ...current, [deviceId]: result }));
+    setDeviceErrors((current) => ({ ...current, [deviceId]: "" }));
+    try {
+      const result = await syncDeviceAttendance.mutateAsync(deviceId);
+      setSyncResults((current) => ({ ...current, [deviceId]: result }));
+    } catch (error) {
+      setDeviceErrors((current) => ({
+        ...current,
+        [deviceId]: getErrorMessage(error),
+      }));
+    }
   };
 
   return (
@@ -88,6 +114,11 @@ export default function DevicesPage() {
                       </p>
                     ) : null}
                   </div>
+                ) : null}
+                {deviceErrors[device.id] ? (
+                  <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {deviceErrors[device.id]}
+                  </p>
                 ) : null}
                 {deviceInfo[device.id] ? (
                   <div className="mt-3 rounded-md bg-muted p-3 text-xs text-muted-foreground">

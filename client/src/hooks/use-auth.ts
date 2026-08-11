@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import axios from "axios";
 
 import {
   getCurrentUser,
@@ -26,7 +27,10 @@ export function useCurrentUser(enabled = true) {
       return response.user;
     },
     enabled,
-    retry: false,
+    retry: (failureCount, error) =>
+      axios.isAxiosError(error) &&
+      (error.response?.status ?? 0) >= 500 &&
+      failureCount < 2,
     staleTime: 60_000,
     throwOnError: false,
     refetchOnMount: false,

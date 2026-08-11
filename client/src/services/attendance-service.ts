@@ -30,17 +30,20 @@ export async function updateEmployeeStatus(input: {
 export async function getAttendanceRows(date?: string) {
   const dailyReport = await getDailyReport(date);
 
-  return dailyReport.rows.map<AttendanceRow>((row) => ({
-    id: `${row.employeeId}-${row.date}`,
-    employeeId: row.employeeId,
-    date: row.date,
-    employee: row.employee,
-    department: row.department,
-    arrival: formatTime(row.firstCheckIn),
-    exit: formatTime(row.lastCheckOut),
-    workingMinutes: row.workingMinutes,
-    status: row.status,
-  }));
+  return {
+    date: dailyReport.date,
+    rows: dailyReport.rows.map<AttendanceRow>((row) => ({
+      id: `${row.employeeId}-${row.date}`,
+      employeeId: row.employeeId,
+      date: row.date,
+      employee: row.employee,
+      department: row.department,
+      arrival: formatTime(row.firstCheckIn),
+      exit: formatTime(row.lastCheckOut),
+      workingMinutes: row.workingMinutes,
+      status: row.status,
+    })),
+  };
 }
 
 export async function getDevices() {

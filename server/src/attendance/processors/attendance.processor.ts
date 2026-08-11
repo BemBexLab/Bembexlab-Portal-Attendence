@@ -32,6 +32,8 @@ export class AttendanceProcessor implements OnModuleInit {
 
     const queue = this.queueService.createQueue(ATTENDANCE_QUEUE_NAME);
 
+    await this.attendanceProcessingService.enforceTwoMonthRetention();
+
     this.queueService.createWorker(ATTENDANCE_QUEUE_NAME, (job) =>
       this.process(job),
     );

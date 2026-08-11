@@ -103,6 +103,12 @@ export type DailyReport = {
   rows: DailyReportRow[];
 };
 
+export type AttendanceExportReport = {
+  from: string;
+  to: string;
+  rows: DailyReportRow[];
+};
+
 export type MonthlyReportRow = {
   employeeId: string;
   employeeCode: string;
