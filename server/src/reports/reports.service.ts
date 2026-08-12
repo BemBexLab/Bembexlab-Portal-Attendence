@@ -17,6 +17,7 @@ import {
   LateArrivalsReportQueryDto,
   MonthlyReportQueryDto,
   OvertimeReportQueryDto,
+  RawPunchesQueryDto,
 } from './dto/report-query.dto';
 
 const DEFAULT_LATE_THRESHOLD = '21:15';
@@ -347,10 +348,7 @@ export class ReportsService {
     };
   }
 
-  async getAttendanceExport(
-    user: CurrentUser,
-    query: DateRangeReportQueryDto,
-  ) {
+  async getAttendanceExport(user: CurrentUser, query: DateRangeReportQueryDto) {
     if (!query.from || !query.to) {
       throw new BadRequestException('from and to dates are required');
     }
@@ -389,9 +387,7 @@ export class ReportsService {
       const dateKey = this.toDateKey(date);
 
       for (const employee of employees) {
-        const record = recordsByEmployeeDate.get(
-          `${employee.id}:${dateKey}`,
-        );
+        const record = recordsByEmployeeDate.get(`${employee.id}:${dateKey}`);
 
         rows.push({
           date: dateKey,
@@ -404,9 +400,7 @@ export class ReportsService {
           lastCheckOut: record?.lastCheckOut?.toISOString() ?? null,
           workingMinutes: record?.workingMinutes ?? 0,
           status:
-            record?.statusOverride ??
-            record?.status ??
-            AttendanceStatus.ABSENT,
+            record?.statusOverride ?? record?.status ?? AttendanceStatus.ABSENT,
         });
       }
     }
@@ -415,6 +409,59 @@ export class ReportsService {
       from: this.toDateKey(from),
       to: this.toDateKey(this.addDays(to, -1)),
       rows,
+    };
+  }
+
+  async getRawPunches(user: CurrentUser, query: RawPunchesQueryDto) {
+    const scope = this.resolveScope(user, query.organizationId);
+    const page = query.page ?? 1;
+    const pageSize = Math.min(query.pageSize ?? 100, 250);
+    const search = query.search?.trim();
+    const where = {
+      ...this.createAttendanceWhere(scope),
+      ...(search
+        ? {
+            employee: {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' as const } },
+                {
+                  employeeCode: {
+                    contains: search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              ],
+            },
+          }
+        : {}),
+    };
+    const [total, records] = await this.prisma.$transaction([
+      this.prisma.attendanceLog.count({ where }),
+      this.prisma.attendanceLog.findMany({
+        where,
+        include: {
+          employee: { include: { department: true } },
+          device: { select: { name: true } },
+        },
+        orderBy: { punchTime: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return {
+      data: records.map((record) => ({
+        id: record.id,
+        employeeCode: record.employee.employeeCode,
+        employee: record.employee.name,
+        department: record.employee.department?.name ?? 'Unassigned',
+        device: record.device.name,
+        punchTime: record.punchTime.toISOString(),
+        verificationType: record.verificationType,
+      })),
+      page,
+      pageSize,
+      total,
     };
   }
 
@@ -665,11 +712,7 @@ export class ReportsService {
 
       const status = record.statusOverride ?? record.status;
       this.applyAnalyticsRecord(trend, status, record.workingMinutes);
-      this.applyAnalyticsRecord(
-        department,
-        status,
-        record.workingMinutes,
-      );
+      this.applyAnalyticsRecord(department, status, record.workingMinutes);
       trends.set(dateKey, trend);
       departments.set(departmentName, department);
     }
@@ -867,10 +910,7 @@ export class ReportsService {
 
   private async normalizeRange(from?: string, to?: string) {
     const databaseNow = await this.prisma.databaseNow();
-    const fallbackDateKey = getDateKeyInTimeZone(
-      databaseNow,
-      'Asia/Karachi',
-    );
+    const fallbackDateKey = getDateKeyInTimeZone(databaseNow, 'Asia/Karachi');
     const fallbackTo = this.toDatabaseDate(fallbackDateKey);
     const fallbackFrom = this.addDays(fallbackTo, -6);
     const fromDate = from

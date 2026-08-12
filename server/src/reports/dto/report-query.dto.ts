@@ -3,6 +3,7 @@ import {
   IsDateString,
   IsInt,
   IsOptional,
+  IsString,
   IsUUID,
   Matches,
   Min,
@@ -48,4 +49,22 @@ export class OvertimeReportQueryDto extends DateRangeReportQueryDto {
   @IsInt()
   @Min(1)
   minimumMinutes?: number;
+}
+
+export class RawPunchesQueryDto extends OrganizationScopedQueryDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  pageSize?: number;
 }

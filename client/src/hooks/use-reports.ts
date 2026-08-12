@@ -9,6 +9,7 @@ import {
   getOvertimeReport,
   getReportAnalytics,
   getPayrollReport,
+  getRawPunches,
 } from "@/services/report-service";
 
 export const reportKeys = {
@@ -19,6 +20,8 @@ export const reportKeys = {
   overtime: ["reports", "overtime"] as const,
   analytics: ["reports", "analytics"] as const,
   payroll: (month?: string) => ["reports", "payroll", month ?? "current"] as const,
+  rawPunches: (search: string, page: number) =>
+    ["reports", "raw-punches", search, page] as const,
 };
 
 export function useDailyReport(date?: string) {
@@ -60,5 +63,12 @@ export function usePayrollReport(month?: string) {
   return useQuery({
     queryKey: reportKeys.payroll(month),
     queryFn: () => getPayrollReport(month),
+  });
+}
+
+export function useRawPunches(search: string, page: number) {
+  return useQuery({
+    queryKey: reportKeys.rawPunches(search, page),
+    queryFn: () => getRawPunches(search, page),
   });
 }

@@ -7,7 +7,9 @@ import type {
   OvertimeReport,
   PayrollReport,
   ReportAnalytics,
+  RawPunch,
 } from "@/types/attendance";
+import type { PaginatedResponse } from "@/types/api";
 
 async function getReport<T>(
   path: string,
@@ -46,4 +48,12 @@ export function getAttendanceExport(from: string, to: string) {
 
 export function getPayrollReport(month?: string) {
   return getReport<PayrollReport>("/reports/payroll", { month });
+}
+
+export function getRawPunches(search: string, page: number, pageSize = 100) {
+  return getReport<PaginatedResponse<RawPunch>>("/reports/raw-punches", {
+    search: search || undefined,
+    page,
+    pageSize,
+  });
 }

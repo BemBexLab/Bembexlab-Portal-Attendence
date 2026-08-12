@@ -19,6 +19,7 @@ import {
   LateArrivalsReportQueryDto,
   MonthlyReportQueryDto,
   OvertimeReportQueryDto,
+  RawPunchesQueryDto,
 } from './dto/report-query.dto';
 import { ReportsService } from './reports.service';
 
@@ -64,6 +65,14 @@ export class ReportsController {
     @Query() query: DateRangeReportQueryDto,
   ) {
     return this.reportsService.getAttendanceExport(user, query);
+  }
+
+  @Get('raw-punches')
+  rawPunches(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Query() query: RawPunchesQueryDto,
+  ) {
+    return this.reportsService.getRawPunches(user, query);
   }
 
   @Get('employees/:employeeId/history')

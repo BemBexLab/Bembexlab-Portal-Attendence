@@ -82,6 +82,16 @@ export type ScheduledAttendanceStatus = {
   status: "REMOTE" | "ON_LEAVE";
 };
 
+export type RawPunch = {
+  id: string;
+  employeeCode: string;
+  employee: string;
+  department: string;
+  device: string;
+  punchTime: string;
+  verificationType: string;
+};
+
 export type Device = {
   id: string;
   name: string;

@@ -123,15 +123,15 @@ export default function ReportsPage() {
             label="Late"
             value={daily?.summary.lateCount ?? "-"}
           />
-          <MetricCard
+          {/* <MetricCard
             detail="Monthly overtime"
             icon={Timer}
             label="Overtime"
             value={monthly ? formatHours(monthly.summary.overtimeMinutes) : "-"}
-          />
+          /> */}
         </div>
 
-        <Panel>
+        {/* <Panel>
           <PanelHeader className="flex-col items-stretch sm:flex-row sm:items-center">
             <div>
               <h2 className="text-sm font-semibold">Reporting workspace</h2>
@@ -192,9 +192,9 @@ export default function ReportsPage() {
               </div>
             </div>
           </PanelBody>
-        </Panel>
+        </Panel> */}
 
-        <ReportCharts analytics={analytics.data} />
+        {/* <ReportCharts analytics={analytics.data} /> */}
 
         <PayrollReportPanel />
 

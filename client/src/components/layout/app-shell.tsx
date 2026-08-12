@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   MonitorCheck,
+  Rows3,
   CalendarRange,
   UsersRound,
 } from "lucide-react";
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/leave-remote", label: "Leave & Remote", icon: CalendarRange },
   { href: "/devices", label: "Devices", icon: Fingerprint },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/raw-data", label: "Raw Data", icon: Rows3 },
 ];
 
 type AppShellProps = {
