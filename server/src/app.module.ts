@@ -13,6 +13,7 @@ import { RedisModule } from './redis/redis.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { WebsocketModule } from './websocket/websocket.module';
+import { ShiftsModule } from './shifts/shifts.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { WebsocketModule } from './websocket/websocket.module';
     RedisModule,
     QueueModule,
     WebsocketModule,
+    ShiftsModule,
     UsersModule,
     AuthModule,
     DevicesModule,

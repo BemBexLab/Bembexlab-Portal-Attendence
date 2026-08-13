@@ -29,11 +29,22 @@ function formatVerification(value: string) {
     .join(" ");
 }
 
+function pakistanDateToIso(value: string, endOfDay = false) {
+  return value
+    ? new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+05:00`).toISOString()
+    : undefined;
+}
+
 export default function RawDataPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
-  const punches = useRawPunches(deferredSearch, page);
+  const fromIso = pakistanDateToIso(from);
+  const toIso = pakistanDateToIso(to, true);
+  const validRange = !fromIso || !toIso || fromIso <= toIso;
+  const punches = useRawPunches(deferredSearch, page, fromIso, toIso);
   const totalPages = Math.max(
     1,
     Math.ceil((punches.data?.total ?? 0) / (punches.data?.pageSize ?? 100)),
@@ -45,27 +56,24 @@ export default function RawDataPage() {
       title="Raw Data"
     >
       <Panel>
-        <PanelHeader className="flex-col items-stretch sm:flex-row sm:items-center">
+        <PanelHeader className="flex-col items-stretch gap-3 xl:flex-row xl:items-end">
           <div>
             <h2 className="text-sm font-semibold">Raw punches</h2>
             <p className="text-xs text-muted-foreground">
               Newest punches first. Search an employee to view their history.
             </p>
           </div>
-          <label className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              aria-label="Search punches by employee name or code"
-              className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20 sm:w-80"
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(1);
-              }}
-              placeholder="Search employee name or code"
-              value={search}
-            />
-          </label>
+          <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto_auto_auto]">
+            <label className="relative self-end">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input aria-label="Search punches by employee name or code" className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search employee name or code" value={search} />
+            </label>
+            <label className="text-xs text-muted-foreground">From date<input className="mt-1 block h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" onChange={(event) => { setFrom(event.target.value); setPage(1); }} type="date" value={from} /></label>
+            <label className="text-xs text-muted-foreground">To date<input className="mt-1 block h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" onChange={(event) => { setTo(event.target.value); setPage(1); }} type="date" value={to} /></label>
+            <Button className="self-end" disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); setPage(1); }} type="button">Clear</Button>
+          </div>
         </PanelHeader>
+        {!validRange ? <p className="border-b border-border px-4 py-2 text-sm text-destructive">From date must be before To date.</p> : null}
         <PanelBody className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left text-sm">

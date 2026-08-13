@@ -11,10 +11,40 @@ import type {
   Employee,
   ReportAnalytics,
   ScheduledAttendanceStatus,
+  Shift,
 } from "@/types/attendance";
 
 export async function getEmployees() {
   const response = await api.get<Employee[]>("/users/employees");
+  return response.data;
+}
+
+export async function getShifts() {
+  const response = await api.get<Shift[]>("/shifts");
+  return response.data;
+}
+
+export async function createShift(input: { name: string; startMinutes: number; endMinutes: number }) {
+  const response = await api.post<Shift>("/shifts", input);
+  return response.data;
+}
+
+export async function updateShift(input: { id: string; name?: string; startMinutes?: number; endMinutes?: number; isActive?: boolean }) {
+  const { id, ...data } = input;
+  const response = await api.patch<Shift>(`/shifts/${id}`, data);
+  return response.data;
+}
+
+export async function deleteShift(id: string) {
+  const response = await api.delete<{ id: string; removedAssignments: number }>(`/shifts/${id}`);
+  return response.data;
+}
+
+export async function assignEmployeeShift(input: { employeeId: string; shiftId: string; effectiveFrom: string }) {
+  const response = await api.post(`/shifts/employees/${input.employeeId}/assign`, {
+    shiftId: input.shiftId,
+    effectiveFrom: input.effectiveFrom,
+  });
   return response.data;
 }
 

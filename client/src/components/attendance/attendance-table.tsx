@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import { AttendanceStatusBadge } from "@/components/attendance/status-badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   useAttendanceRows,
@@ -337,15 +338,7 @@ export function AttendanceTable() {
               value={search}
             />
           </label>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/20"
-            onChange={(event) => setDepartment(event.target.value)}
-            value={department}
-          >
-            {departments.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
+          <Select ariaLabel="Filter by department" className="min-w-44" onChange={setDepartment} options={departments.map((item) => ({ value: item, label: item }))} value={department} />
         </div>
       </PanelHeader>
       <PanelBody className="p-0">

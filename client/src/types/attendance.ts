@@ -18,6 +18,22 @@ export type Employee = {
   deviceUserId: string | null;
   isActive: boolean;
   monthlySalary: string;
+  shift: {
+    id: string;
+    name: string;
+    startMinutes: number;
+    endMinutes: number;
+    effectiveFrom: string;
+  } | null;
+};
+
+export type Shift = {
+  id: string;
+  name: string;
+  startMinutes: number;
+  endMinutes: number;
+  isActive: boolean;
+  _count: { assignments: number };
 };
 
 export type PayrollRow = {
@@ -30,6 +46,7 @@ export type PayrollRow = {
   assessedWorkingDays: number;
   dailyRate: number;
   presentDays: number;
+  lateDays: number;
   absentDays: number;
   halfDays: number;
   halfDayDeductionDays: number;

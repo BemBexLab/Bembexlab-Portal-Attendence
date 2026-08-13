@@ -260,6 +260,7 @@ export class ReportsService {
       let absentDays = 0;
       let halfDays = 0;
       let presentDays = 0;
+      let lateDays = 0;
       const attendanceDetails: Array<{
         date: string;
         day: string;
@@ -271,6 +272,8 @@ export class ReportsService {
           `${employee.id}:${dateKey}`,
         );
         const status = record?.statusOverride ?? record?.status;
+
+        if (status === AttendanceStatus.LATE) lateDays += 1;
 
         if (!status || status === AttendanceStatus.ABSENT) {
           absentDays += 1;
@@ -312,6 +315,7 @@ export class ReportsService {
         assessedWorkingDays: assessedDateKeys.length,
         dailyRate: this.roundMoney(dailyRate),
         presentDays,
+        lateDays,
         absentDays,
         halfDays,
         halfDayDeductionDays,
@@ -417,8 +421,19 @@ export class ReportsService {
     const page = query.page ?? 1;
     const pageSize = Math.min(query.pageSize ?? 100, 250);
     const search = query.search?.trim();
+    const from = query.from ? new Date(query.from) : undefined;
+    const to = query.to ? new Date(query.to) : undefined;
+    if (from && to && from > to) {
+      throw new BadRequestException('From date/time must be before To date/time');
+    }
     const where = {
       ...this.createAttendanceWhere(scope),
+      ...((from || to) && {
+        punchTime: {
+          ...(from && { gte: from }),
+          ...(to && { lte: to }),
+        },
+      }),
       ...(search
         ? {
             employee: {

@@ -12,6 +12,7 @@ import {
   dateKeyToDatabaseDate,
   getDateKeyInTimeZone,
   getPakistanShiftEnd,
+  zonedDateTimeToUtc,
 } from './utils/timezone';
 import type { UpdateAttendanceStatusDto } from './dto/update-attendance-status.dto';
 import type { BulkAttendanceStatusDto } from './dto/bulk-attendance-status.dto';
@@ -207,7 +208,11 @@ export class AttendanceService {
 
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
-      select: { id: true, organizationId: true },
+      select: {
+        id: true,
+        organizationId: true,
+        organization: { select: { timezone: true } },
+      },
     });
 
     if (!employee) {
@@ -227,7 +232,23 @@ export class AttendanceService {
       where: { employeeId_date: { employeeId, date } },
       select: { lastCheckOut: true },
     });
-    const shiftEnd = getPakistanShiftEnd(dateKey);
+    const assignment = await this.prisma.employeeShiftAssignment.findFirst({
+      where: {
+        employeeId,
+        effectiveFrom: { lte: date },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }],
+      },
+      include: { shift: true },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    const shiftEnd = assignment
+      ? zonedDateTimeToUtc(
+          dateKey,
+          assignment.shift.endMinutes,
+          employee.organization.timezone || 'Asia/Karachi',
+          assignment.shift.endMinutes <= assignment.shift.startMinutes ? 1 : 0,
+        )
+      : getPakistanShiftEnd(dateKey);
     const automaticCheckout = [
       'PRESENT',
       'HALF_DAY',

@@ -50,9 +50,11 @@ export function getPayrollReport(month?: string) {
   return getReport<PayrollReport>("/reports/payroll", { month });
 }
 
-export function getRawPunches(search: string, page: number, pageSize = 100) {
+export function getRawPunches(search: string, page: number, from?: string, to?: string, pageSize = 100) {
   return getReport<PaginatedResponse<RawPunch>>("/reports/raw-punches", {
     search: search || undefined,
+    from,
+    to,
     page,
     pageSize,
   });

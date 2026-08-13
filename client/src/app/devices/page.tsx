@@ -130,22 +130,6 @@ export default function DevicesPage() {
                 ) : null}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button
-                    disabled={testDevice.isPending}
-                    onClick={() => testDevice.mutate(device.id)}
-                    type="button"
-                  >
-                    <Wifi className="size-4" />
-                    Test
-                  </Button>
-                  <Button
-                    disabled={fetchDeviceInfo.isPending}
-                    onClick={() => handleFetchInfo(device.id)}
-                    type="button"
-                  >
-                    <Fingerprint className="size-4" />
-                    Info
-                  </Button>
-                  <Button
                     disabled={syncDeviceAttendance.isPending}
                     onClick={() => handleSync(device.id)}
                     type="button"

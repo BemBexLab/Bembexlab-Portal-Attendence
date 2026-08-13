@@ -70,3 +70,36 @@ export function getPakistanShiftEnd(dateKey: string) {
   nextDate.setUTCHours(1, 0, 0, 0);
   return nextDate;
 }
+
+export function zonedDateTimeToUtc(
+  dateKey: string,
+  minutes: number,
+  timeZone: string,
+  dayOffset = 0,
+) {
+  const date = dateKeyToDatabaseDate(dateKey);
+  date.setUTCDate(date.getUTCDate() + dayOffset);
+  const localTarget = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    Math.floor(minutes / 60),
+    minutes % 60,
+  );
+  let candidate = new Date(localTarget);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const localDateKey = getDateKeyInTimeZone(candidate, timeZone);
+    const localTime = getTimePartsInTimeZone(candidate, timeZone);
+    const represented = Date.UTC(
+      Number(localDateKey.slice(0, 4)),
+      Number(localDateKey.slice(5, 7)) - 1,
+      Number(localDateKey.slice(8, 10)),
+      localTime.hour,
+      localTime.minute,
+    );
+    candidate = new Date(candidate.getTime() + localTarget - represented);
+  }
+
+  return candidate;
+}

@@ -57,6 +57,14 @@ export class RawPunchesQueryDto extends OrganizationScopedQueryDto {
   search?: string;
 
   @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

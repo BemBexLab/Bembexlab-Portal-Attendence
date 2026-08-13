@@ -19,6 +19,11 @@ import {
   removeScheduledAttendanceStatus,
   updateEmployeeStatus,
   updateEmployeeSalary,
+  getShifts,
+  createShift,
+  updateShift,
+  deleteShift,
+  assignEmployeeShift,
 } from "@/services/attendance-service";
 
 export const attendanceKeys = {
@@ -29,6 +34,7 @@ export const attendanceKeys = {
   departments: ["reports", "departments"] as const,
   trend: ["reports", "trend"] as const,
   scheduledStatuses: ["attendance", "scheduled-statuses"] as const,
+  shifts: ["shifts"] as const,
 };
 
 export function useDashboardSummary() {
@@ -111,6 +117,47 @@ export function useEmployees() {
     queryKey: attendanceKeys.employees,
     queryFn: getEmployees,
   });
+}
+
+export function useShifts() {
+  return useQuery({ queryKey: attendanceKeys.shifts, queryFn: getShifts });
+}
+
+export function useCreateShift() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: createShift, onSuccess: () => queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }) });
+}
+
+export function useUpdateShift() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: updateShift, onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
+    ]);
+  } });
+}
+
+export function useDeleteShift() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: deleteShift, onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+    ]);
+  } });
+}
+
+export function useAssignEmployeeShift() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: assignEmployeeShift, onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+    ]);
+  } });
 }
 
 export function useUpdateEmployeeStatus() {

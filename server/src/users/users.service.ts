@@ -46,6 +46,11 @@ export class UsersService {
       },
       include: {
         department: true,
+        shiftAssignments: {
+          include: { shift: true },
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
       },
       orderBy: {
         employeeCode: 'asc',
@@ -60,6 +65,17 @@ export class UsersService {
       deviceUserId: employee.deviceUserId,
       isActive: employee.isActive,
       monthlySalary: employee.monthlySalary.toString(),
+      shift: employee.shiftAssignments[0]
+        ? {
+            id: employee.shiftAssignments[0].shift.id,
+            name: employee.shiftAssignments[0].shift.name,
+            startMinutes: employee.shiftAssignments[0].shift.startMinutes,
+            endMinutes: employee.shiftAssignments[0].shift.endMinutes,
+            effectiveFrom: employee.shiftAssignments[0].effectiveFrom
+              .toISOString()
+              .slice(0, 10),
+          }
+        : null,
     }));
   }
 

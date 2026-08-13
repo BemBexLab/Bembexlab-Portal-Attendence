@@ -9,6 +9,7 @@ import {
   Menu,
   MonitorCheck,
   Rows3,
+  Clock4,
   CalendarRange,
   UsersRound,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { useRealtimeStore } from "@/stores/realtime-store";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/shifts", label: "Shifts", icon: Clock4 },
   { href: "/employees", label: "Employees", icon: UsersRound },
   { href: "/attendance", label: "Attendance", icon: CalendarDays },
   { href: "/leave-remote", label: "Leave & Remote", icon: CalendarRange },

@@ -12,10 +12,7 @@ import {
 import {
   dateKeyToDatabaseDate,
   getDateKeyInTimeZone,
-  getNightShiftDateKey,
-  getLooseUtcWindowForDateKey,
-  getPakistanShiftEnd,
-  getTimePartsInTimeZone,
+  zonedDateTimeToUtc,
 } from './utils/timezone';
 
 type AffectedAttendanceDay = {
@@ -25,9 +22,8 @@ type AffectedAttendanceDay = {
   timezone: string;
 };
 
-const SHIFT_START_MINUTES = 21 * 60;
-const ON_TIME_DEADLINE_MINUTES = 21 * 60 + 15;
-const SHIFT_END_MINUTES = 6 * 60;
+const GRACE_MINUTES = 15;
+const PUNCH_WINDOW_MINUTES = 4 * 60;
 
 @Injectable()
 export class AttendanceProcessingService {
@@ -123,6 +119,14 @@ export class AttendanceProcessingService {
         organizationId: true,
         punchTime: true,
         organization: { select: { timezone: true } },
+        employee: {
+          select: {
+            shiftAssignments: {
+              include: { shift: true },
+              orderBy: { effectiveFrom: 'desc' },
+            },
+          },
+        },
       },
       orderBy: { punchTime: 'asc' },
     });
@@ -130,14 +134,12 @@ export class AttendanceProcessingService {
 
     for (const log of logs) {
       const timezone = log.organization.timezone || 'Asia/Karachi';
-      const time = getTimePartsInTimeZone(log.punchTime, timezone);
-      const minutes = time.hour * 60 + time.minute;
-
-      if (minutes < SHIFT_START_MINUTES && minutes > SHIFT_END_MINUTES) {
-        continue;
-      }
-
-      const dateKey = getNightShiftDateKey(log.punchTime, timezone);
+      const dateKey = this.resolveShiftDateKey(
+        log.punchTime,
+        timezone,
+        log.employee.shiftAssignments,
+      );
+      if (!dateKey) continue;
       affectedDays.set(`${log.employeeId}:${dateKey}`, {
         employeeId: log.employeeId,
         organizationId: log.organizationId,
@@ -207,7 +209,9 @@ export class AttendanceProcessingService {
             deviceUser.deviceUserId,
           );
 
-          return existing && deviceUser.name && existing.name !== deviceUser.name
+          return existing &&
+            deviceUser.name &&
+            existing.name !== deviceUser.name
             ? [
                 this.prisma.employee.update({
                   where: { id: existing.id },
@@ -218,7 +222,8 @@ export class AttendanceProcessingService {
         }),
       );
 
-      const fetchedPunches = await this.zktecoService.getAttendancePunches(device);
+      const fetchedPunches =
+        await this.zktecoService.getAttendancePunches(device);
       const { punchCutoff } = this.getRetentionCutoffs(databaseNow);
       const punches = fetchedPunches.filter(
         (punch) => punch.punchTime >= punchCutoff,
@@ -238,6 +243,10 @@ export class AttendanceProcessingService {
           id: true,
           deviceUserId: true,
           attendanceTrackingSince: true,
+          shiftAssignments: {
+            include: { shift: true },
+            orderBy: { effectiveFrom: 'desc' },
+          },
         },
       });
       const employeeByDeviceUserId = new Map(
@@ -263,33 +272,20 @@ export class AttendanceProcessingService {
         }
         const employeeId = employee.id;
 
-        const punchTime = getTimePartsInTimeZone(punch.punchTime, timezone);
-        const punchMinutes = punchTime.hour * 60 + punchTime.minute;
-
-        if (
-          punchMinutes < SHIFT_START_MINUTES &&
-          punchMinutes > SHIFT_END_MINUTES
-        ) {
-          return {
-            organizationId: device.organizationId,
-            employeeId,
-            deviceId: device.id,
-            punchTime: punch.punchTime,
-            verificationType: punch.verificationType,
-          };
-        }
-
-        if (
-          !latestStoredLog ||
-          punch.punchTime >= latestStoredLog.punchTime
-        ) {
-          const dateKey = getNightShiftDateKey(punch.punchTime, timezone);
-          affectedDays.set(`${employeeId}:${dateKey}`, {
-            employeeId,
-            organizationId: device.organizationId,
-            dateKey,
+        if (!latestStoredLog || punch.punchTime >= latestStoredLog.punchTime) {
+          const dateKey = this.resolveShiftDateKey(
+            punch.punchTime,
             timezone,
-          });
+            employee.shiftAssignments,
+          );
+          if (dateKey) {
+            affectedDays.set(`${employeeId}:${dateKey}`, {
+              employeeId,
+              organizationId: device.organizationId,
+              dateKey,
+              timezone,
+            });
+          }
         }
 
         return {
@@ -397,7 +393,41 @@ export class AttendanceProcessingService {
     day: AffectedAttendanceDay,
     databaseNow: Date,
   ) {
-    const window = getLooseUtcWindowForDateKey(day.dateKey);
+    const date = dateKeyToDatabaseDate(day.dateKey);
+    const assignment = await this.prisma.employeeShiftAssignment.findFirst({
+      where: {
+        employeeId: day.employeeId,
+        effectiveFrom: { lte: date },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }],
+      },
+      include: { shift: true },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    if (!assignment) {
+      throw new Error(
+        `No shift assigned to employee ${day.employeeId} for ${day.dateKey}`,
+      );
+    }
+    const crossesMidnight =
+      assignment.shift.endMinutes <= assignment.shift.startMinutes;
+    const scheduledStart = zonedDateTimeToUtc(
+      day.dateKey,
+      assignment.shift.startMinutes,
+      day.timezone,
+    );
+    const scheduledEnd = zonedDateTimeToUtc(
+      day.dateKey,
+      assignment.shift.endMinutes,
+      day.timezone,
+      crossesMidnight ? 1 : 0,
+    );
+    const graceDeadline = new Date(
+      scheduledStart.getTime() + GRACE_MINUTES * 60_000,
+    );
+    const window = {
+      start: new Date(scheduledStart.getTime() - PUNCH_WINDOW_MINUTES * 60_000),
+      end: new Date(scheduledEnd.getTime() + PUNCH_WINDOW_MINUTES * 60_000),
+    };
     const logs = await this.prisma.attendanceLog.findMany({
       where: {
         organizationId: day.organizationId,
@@ -411,15 +441,7 @@ export class AttendanceProcessingService {
         punchTime: 'asc',
       },
     });
-    const dayLogs = logs.filter((log) => {
-      if (getNightShiftDateKey(log.punchTime, day.timezone) !== day.dateKey) {
-        return false;
-      }
-
-      const time = getTimePartsInTimeZone(log.punchTime, day.timezone);
-      const minutes = time.hour * 60 + time.minute;
-      return minutes >= SHIFT_START_MINUTES || minutes <= SHIFT_END_MINUTES;
-    });
+    const dayLogs = logs;
     const existing = await this.prisma.dailyAttendance.findUnique({
       where: {
         employeeId_date: {
@@ -437,16 +459,8 @@ export class AttendanceProcessingService {
       lastPunch.getTime() !== firstCheckIn.getTime()
         ? lastPunch
         : null;
-    const arrivalTime = firstCheckIn
-      ? getTimePartsInTimeZone(firstCheckIn, day.timezone)
-      : null;
-    const arrivalMinutes = arrivalTime
-      ? arrivalTime.hour * 60 +
-        arrivalTime.minute +
-        (arrivalTime.hour <= 6 ? 24 * 60 : 0)
-      : null;
     const arrivedAfterDeadline =
-      arrivalMinutes !== null && arrivalMinutes > ON_TIME_DEADLINE_MINUTES;
+      firstCheckIn !== null && firstCheckIn > graceDeadline;
     const status = firstCheckIn
       ? arrivedAfterDeadline
         ? AttendanceStatus.HALF_DAY
@@ -455,7 +469,7 @@ export class AttendanceProcessingService {
           : AttendanceStatus.MISSING_CHECKOUT
       : AttendanceStatus.ABSENT;
     const effectiveStatus = existing?.statusOverride ?? status;
-    const shiftEnd = getPakistanShiftEnd(day.dateKey);
+    const shiftEnd = scheduledEnd;
     const automaticCheckoutStatuses = new Set<AttendanceStatus>([
       AttendanceStatus.PRESENT,
       AttendanceStatus.HALF_DAY,
@@ -488,6 +502,11 @@ export class AttendanceProcessingService {
         lastCheckOut: finalCheckOut,
         workingMinutes,
         status,
+        shiftId: assignment.shift.id,
+        shiftNameSnapshot: assignment.shift.name,
+        scheduledStart,
+        scheduledEnd,
+        graceDeadline,
       },
       create: {
         organizationId: day.organizationId,
@@ -497,8 +516,63 @@ export class AttendanceProcessingService {
         lastCheckOut: finalCheckOut,
         workingMinutes,
         status,
+        shiftId: assignment.shift.id,
+        shiftNameSnapshot: assignment.shift.name,
+        scheduledStart,
+        scheduledEnd,
+        graceDeadline,
       },
     });
+  }
+
+  private resolveShiftDateKey(
+    punchTime: Date,
+    timezone: string,
+    assignments: Array<{
+      effectiveFrom: Date;
+      effectiveTo: Date | null;
+      shift: { startMinutes: number; endMinutes: number };
+    }>,
+  ) {
+    const localDateKey = getDateKeyInTimeZone(punchTime, timezone);
+    const candidates = [localDateKey, this.toPreviousDateKey(localDateKey)];
+
+    for (const dateKey of candidates) {
+      const date = dateKeyToDatabaseDate(dateKey);
+      const assignment = assignments.find(
+        (item) =>
+          item.effectiveFrom <= date &&
+          (!item.effectiveTo || item.effectiveTo >= date),
+      );
+      if (!assignment) continue;
+      const overnight =
+        assignment.shift.endMinutes <= assignment.shift.startMinutes;
+      const start = zonedDateTimeToUtc(
+        dateKey,
+        assignment.shift.startMinutes,
+        timezone,
+      );
+      const end = zonedDateTimeToUtc(
+        dateKey,
+        assignment.shift.endMinutes,
+        timezone,
+        overnight ? 1 : 0,
+      );
+      if (
+        punchTime >=
+          new Date(start.getTime() - PUNCH_WINDOW_MINUTES * 60_000) &&
+        punchTime <= new Date(end.getTime() + PUNCH_WINDOW_MINUTES * 60_000)
+      )
+        return dateKey;
+    }
+
+    return null;
+  }
+
+  private toPreviousDateKey(dateKey: string) {
+    const date = dateKeyToDatabaseDate(dateKey);
+    date.setUTCDate(date.getUTCDate() - 1);
+    return date.toISOString().slice(0, 10);
   }
 
   private getRetentionCutoffs(now: Date) {

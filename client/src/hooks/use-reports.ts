@@ -20,8 +20,8 @@ export const reportKeys = {
   overtime: ["reports", "overtime"] as const,
   analytics: ["reports", "analytics"] as const,
   payroll: (month?: string) => ["reports", "payroll", month ?? "current"] as const,
-  rawPunches: (search: string, page: number) =>
-    ["reports", "raw-punches", search, page] as const,
+  rawPunches: (search: string, page: number, from?: string, to?: string) =>
+    ["reports", "raw-punches", search, page, from, to] as const,
 };
 
 export function useDailyReport(date?: string) {
@@ -66,9 +66,10 @@ export function usePayrollReport(month?: string) {
   });
 }
 
-export function useRawPunches(search: string, page: number) {
+export function useRawPunches(search: string, page: number, from?: string, to?: string) {
   return useQuery({
-    queryKey: reportKeys.rawPunches(search, page),
-    queryFn: () => getRawPunches(search, page),
+    queryKey: reportKeys.rawPunches(search, page, from, to),
+    queryFn: () => getRawPunches(search, page, from, to),
+    enabled: !from || !to || from <= to,
   });
 }

@@ -2,6 +2,7 @@
 
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useState } from "react";
+import Swal from "sweetalert2";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -11,11 +12,22 @@ import {
   useUpdateEmployeeSalary,
   useUpdateEmployeeStatus,
 } from "@/hooks/use-attendance-data";
+import { usePayrollReport } from "@/hooks/use-reports";
+
+function formatTime(minutes: number) {
+  const hour24 = Math.floor(minutes / 60) % 24;
+  return `${String(hour24 % 12 || 12).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")} ${hour24 >= 12 ? "PM" : "AM"}`;
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(value);
+}
 
 export default function EmployeesPage() {
   const employees = useEmployees();
   const updateStatus = useUpdateEmployeeStatus();
   const updateSalary = useUpdateEmployeeSalary();
+  const payroll = usePayrollReport();
   const [openStatusId, setOpenStatusId] = useState<string | null>(null);
   const [salaryDrafts, setSalaryDrafts] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
@@ -27,6 +39,27 @@ export default function EmployeesPage() {
       employee.employeeCode.toLowerCase().includes(query)
     );
   });
+  const showEmployeeInfo = async (employee: NonNullable<typeof employees.data>[number]) => {
+    const payrollRow = payroll.data?.rows.find((row) => row.employeeId === employee.id);
+    const shift = employee.shift;
+    await Swal.fire({
+      title: employee.name,
+      html: `
+        <div style="margin-top:4px;text-align:left">
+          <div style="margin-bottom:16px;color:#6b7280;font-size:13px">${employee.employeeCode} · ${employee.department ?? "Unassigned"}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="grid-column:1/-1;border:1px solid #e5e7eb;border-radius:10px;padding:14px;background:#f9fafb"><div style="color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Assigned shift</div><div style="margin-top:6px;color:#111827;font-size:15px;font-weight:600">${shift ? `${shift.name} · ${formatTime(shift.startMinutes)} → ${formatTime(shift.endMinutes)}` : "No shift assigned"}</div></div>
+            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px"><div style="color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase">Late arrivals</div><div style="margin-top:5px;color:#d97706;font-size:24px;font-weight:700">${payrollRow?.lateDays ?? 0}</div></div>
+            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px"><div style="color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase">Absent days</div><div style="margin-top:5px;color:#dc2626;font-size:24px;font-weight:700">${payrollRow?.absentDays ?? 0}</div></div>
+            <div style="grid-column:1/-1;border:1px solid #bbf7d0;border-radius:10px;padding:14px;background:#f0fdf4"><div style="color:#15803d;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Salary to receive</div><div style="margin-top:5px;color:#166534;font-size:24px;font-weight:700">${payrollRow ? formatMoney(payrollRow.payableSalary) : "Not calculated"}</div>${payrollRow ? `<div style="margin-top:4px;color:#4b5563;font-size:12px">Monthly salary ${formatMoney(payrollRow.monthlySalary)} · Deductions ${formatMoney(payrollRow.deductionAmount)}</div>` : ""}</div>
+          </div>
+        </div>`,
+      width: 580,
+      confirmButtonText: "Close",
+      confirmButtonColor: "#171717",
+      footer: payroll.data ? `Payroll cycle ${payroll.data.cycleStart} to ${payroll.data.cycleEnd}` : "Current payroll data is loading",
+    });
+  };
 
   return (
     <AppShell
@@ -67,7 +100,7 @@ export default function EmployeesPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {filteredEmployees.map((employee) => (
-                  <tr className="hover:bg-muted/40" key={employee.id}>
+                  <tr className="cursor-pointer hover:bg-muted/40" key={employee.id} onClick={() => void showEmployeeInfo(employee)}>
                     <td className="px-4 py-3 font-medium">
                       {employee.employeeCode}
                     </td>
@@ -78,7 +111,7 @@ export default function EmployeesPage() {
                     <td className="px-4 py-3">
                       {employee.deviceUserId ?? "Not assigned"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <div className="relative">
                           <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
@@ -129,13 +162,14 @@ export default function EmployeesPage() {
                                 }),
                             });
                           }}
+                          onMouseDown={(event) => event.stopPropagation()}
                           type="button"
                         >
                           <Check className="size-4" />
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                       <div className="relative inline-block">
                         <button
                           aria-expanded={openStatusId === employee.id}
@@ -144,10 +178,11 @@ export default function EmployeesPage() {
                           className="inline-flex items-center gap-1 rounded-md outline-none transition hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-wait disabled:opacity-60"
                           disabled={updateStatus.isPending}
                           onClick={() =>
-                            setOpenStatusId((current) =>
+                            { setOpenStatusId((current) =>
                               current === employee.id ? null : employee.id,
-                            )
+                            ); }
                           }
+                          onMouseDown={(event) => event.stopPropagation()}
                           type="button"
                         >
                           <Badge
@@ -177,6 +212,7 @@ export default function EmployeesPage() {
                                     isActive: status.value,
                                   });
                                 }}
+                                onMouseDown={(event) => event.stopPropagation()}
                                 role="menuitem"
                                 type="button"
                               >
