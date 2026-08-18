@@ -154,6 +154,7 @@ model AttendanceLog {
   device       ZktecoDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
 
   @@unique([employeeId, deviceId, punchTime, verificationType], map: "attendance_logs_employee_device_punch_verification_key")
+  @@index([punchTime])
   @@index([organizationId, punchTime])
   @@index([employeeId, punchTime])
   @@index([deviceId, punchTime])
@@ -185,6 +186,7 @@ model DailyAttendance {
   graceDeadline     DateTime?    @map("grace_deadline") @db.Timestamptz(6)
 
   @@unique([employeeId, date])
+  @@index([employeeId, date])
   @@index([organizationId, date])
   @@index([organizationId, status, date])
   @@map("daily_attendance")

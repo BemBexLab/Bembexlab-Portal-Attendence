@@ -89,7 +89,7 @@ export default function RawDataPage() {
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Device</th>
-                  <th className="px-4 py-3 font-medium">Verification</th>
+                  {/* <th className="px-4 py-3 font-medium">Verification</th> */}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -104,9 +104,9 @@ export default function RawDataPage() {
                     <td className="px-4 py-3">{punch.employee}</td>
                     <td className="px-4 py-3"><Badge tone={punch.punchStatus === "CHECK_IN" ? "green" : punch.punchStatus === "CHECK_OUT" ? "blue" : "neutral"}>{punch.punchStatus === "CHECK_IN" ? "Check-in" : punch.punchStatus === "CHECK_OUT" ? "Check-out" : "Additional punch"}</Badge></td>
                     <td className="px-4 py-3">{punch.device}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
+                    {/* <td className="px-4 py-3 text-muted-foreground">
                       {formatVerification(punch.verificationType)}
-                    </td>
+                    </td> */}
                   </tr>
                 ))}
               </tbody>
