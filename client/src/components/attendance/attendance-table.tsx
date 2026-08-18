@@ -382,18 +382,24 @@ export function AttendanceTable() {
           {view === "monthly" ? (
             <table
               className="border-separate border-spacing-0 text-left text-xs"
-              style={{ minWidth: 280 + monthlyDates.length * 240 }}
+              style={{ minWidth: 344 + monthlyDates.length * 240 }}
             >
               <thead className="text-muted-foreground">
                 <tr>
                   <th
-                    className="sticky left-0 z-20 w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
+                    className="sticky left-0 z-20 w-16 min-w-16 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
+                    rowSpan={2}
+                  >
+                    Serial Number
+                  </th>
+                  <th
+                    className="sticky left-16 z-20 w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
                     rowSpan={2}
                   >
                     Employee ID
                   </th>
                   <th
-                    className="sticky left-28 z-20 w-40 min-w-40 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
+                    className="sticky left-44 z-20 w-40 min-w-40 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
                     rowSpan={2}
                   >
                     Name
@@ -443,12 +449,15 @@ export function AttendanceTable() {
                 </tr>
               </thead>
               <tbody>
-                {monthlyEmployees.map((employee) => (
+                {monthlyEmployees.map((employee, index) => (
                   <tr className="group" key={employee.id}>
-                    <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted/40">
+                    <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium tabular-nums group-hover:bg-muted/40">
+                      {index + 1}
+                    </td>
+                    <td className="sticky left-16 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted/40">
                       {employee.employeeCode}
                     </td>
-                    <td className="sticky left-28 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted/40">
+                    <td className="sticky left-44 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted/40">
                       {employee.employee}
                     </td>
                     {monthlyDates.map((date) => {
@@ -469,10 +478,12 @@ export function AttendanceTable() {
               </tbody>
             </table>
           ) : (
-            <table className="w-full min-w-[680px] text-left text-sm">
+            <table className="w-full min-w-[780px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
+                  <th className="w-16 px-4 py-3 font-medium">Serial Number</th>
                   <th className="px-4 py-3 font-medium">Employee</th>
+                  <th className="px-4 py-3 font-medium">Emp Code</th>
                   <th className="px-4 py-3 font-medium">Arrival</th>
                   <th className="px-4 py-3 font-medium">Exit</th>
                   <th className="px-4 py-3 font-medium">Working Hours</th>
@@ -480,9 +491,13 @@ export function AttendanceTable() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredRows.map((row) => (
+                {filteredRows.map((row, index) => (
                   <tr className="hover:bg-muted/40" key={row.id}>
+                    <td className="px-4 py-3 font-medium tabular-nums">
+                      {index + 1}
+                    </td>
                     <td className="px-4 py-3 font-medium">{row.employee}</td>
+                    <td className="px-4 py-3 font-medium">{row.employeeCode}</td>
                     <td className="px-4 py-3">{row.arrival ?? "-"}</td>
                     <td className="px-4 py-3">{row.exit ?? "-"}</td>
                     <td className="px-4 py-3">
