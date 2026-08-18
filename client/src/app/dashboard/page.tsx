@@ -8,20 +8,48 @@ import {
   UserCheck,
   UserX,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 
-import { AttendanceTable } from "@/components/attendance/attendance-table";
-import { AttendanceTrendChart } from "@/components/charts/attendance-trend-chart";
 import { DepartmentChart } from "@/components/charts/department-chart";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { AppShell } from "@/components/layout/app-shell";
 import { DeviceStatusBadge } from "@/components/attendance/status-badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
-import { useDashboardSummary, useDevices } from "@/hooks/use-attendance-data";
+import { useDevices } from "@/hooks/use-attendance-data";
+import { useDailyReport } from "@/hooks/use-reports";
+
+const AttendanceTrendChart = dynamic(
+  () =>
+    import("@/components/charts/attendance-trend-chart").then(
+      (module) => module.AttendanceTrendChart,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-80 animate-pulse rounded-xl border border-border bg-muted/50 xl:col-span-7 xl:row-span-2" />
+    ),
+  },
+);
 
 export default function DashboardPage() {
-  const summary = useDashboardSummary();
+  const daily = useDailyReport();
   const devices = useDevices();
-  const data = summary.data;
+  const activeDevices = (devices.data ?? []).filter(
+    (device) => device.status === "ACTIVE",
+  ).length;
+  const offlineDevices = (devices.data ?? []).filter(
+    (device) => device.status === "OFFLINE",
+  ).length;
+  const data = daily.data
+    ? {
+        totalEmployees: daily.data.summary.totalEmployees,
+        presentCount: daily.data.summary.presentCount,
+        absentCount: daily.data.summary.absentCount,
+        lateCount: daily.data.summary.lateCount,
+        activeDevices,
+        offlineDevices,
+      }
+    : undefined;
 
   return (
     <AppShell
@@ -82,7 +110,9 @@ export default function DashboardPage() {
                   key={device.id}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{device.name}</p>
+                    <p className="truncate text-sm font-medium">
+                      {device.name}
+                    </p>
                     <p className="break-all text-xs text-muted-foreground">
                       {device.ip}:{device.port}
                     </p>

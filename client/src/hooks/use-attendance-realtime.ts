@@ -35,6 +35,24 @@ export function useAttendanceRealtime() {
       withCredentials: true,
       transports: ["websocket", "polling"],
     });
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleAttendanceRefresh = () => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+        void queryClient.invalidateQueries({ queryKey: ["attendance"] });
+        void queryClient.invalidateQueries({ queryKey: ["devices"] });
+        void queryClient.invalidateQueries({ queryKey: ["reports", "daily"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["reports", "monthly"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["reports", "analytics"],
+        });
+      }, 750);
+    };
 
     socket.on("connect", () => {
       setConnected(true);
@@ -48,23 +66,14 @@ export function useAttendanceRealtime() {
       setConnected(false);
     });
 
-    socket.on(
-      "attendance.updated",
-      async (payload: AttendanceUpdatedPayload) => {
-        pushEvent({
-          type: "attendance.updated",
-          payload,
-          receivedAt: new Date().toISOString(),
-        });
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
-          queryClient.invalidateQueries({ queryKey: ["attendance"] }),
-          queryClient.invalidateQueries({ queryKey: ["daily-attendance"] }),
-          queryClient.invalidateQueries({ queryKey: ["devices"] }),
-          queryClient.invalidateQueries({ queryKey: ["reports"] }),
-        ]);
-      },
-    );
+    socket.on("attendance.updated", (payload: AttendanceUpdatedPayload) => {
+      pushEvent({
+        type: "attendance.updated",
+        payload,
+        receivedAt: new Date().toISOString(),
+      });
+      scheduleAttendanceRefresh();
+    });
 
     socket.on("device.connected", async (payload: DeviceConnectionPayload) => {
       pushEvent({
@@ -92,6 +101,7 @@ export function useAttendanceRealtime() {
     });
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       socket.disconnect();
     };
   }, [clearAuth, pushEvent, queryClient, setConnected, user]);

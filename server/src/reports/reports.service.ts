@@ -12,6 +12,7 @@ import {
   getTimePartsInTimeZone,
 } from '../attendance/utils/timezone';
 import {
+  AllRawPunchesQueryDto,
   DailyReportQueryDto,
   DateRangeReportQueryDto,
   LateArrivalsReportQueryDto,
@@ -256,6 +257,9 @@ export class ReportsService {
     );
     const workingDateKeys = this.getWeekdayDateKeys(from, to);
     const assessedDateKeys = this.getWeekdayDateKeys(from, attendanceCutoff);
+    const payrollDays = Math.round(
+      (to.getTime() - from.getTime()) / 86_400_000,
+    );
     const rows = employees.map((employee) => {
       let absentDays = 0;
       let halfDays = 0;
@@ -295,9 +299,7 @@ export class ReportsService {
       }
 
       const monthlySalary = Number(employee.monthlySalary);
-      const dailyRate = workingDateKeys.length
-        ? monthlySalary / workingDateKeys.length
-        : 0;
+      const dailyRate = payrollDays ? monthlySalary / payrollDays : 0;
       const halfDayDeductionDays = Math.floor(halfDays / 3);
       const totalDeductionDays = absentDays + halfDayDeductionDays;
       const deductionAmount = Math.min(
@@ -311,6 +313,7 @@ export class ReportsService {
         employee: employee.name,
         department: employee.department?.name ?? 'Unassigned',
         monthlySalary: this.roundMoney(monthlySalary),
+        payrollDays,
         workingDays: workingDateKeys.length,
         assessedWorkingDays: assessedDateKeys.length,
         dailyRate: this.roundMoney(dailyRate),
@@ -335,7 +338,8 @@ export class ReportsService {
           ? this.toDateKey(this.addDays(attendanceCutoff, -1))
           : null,
       workingDays: workingDateKeys.length,
-      rule: 'Payroll runs from the 25th through the following month’s 25th; each absent weekday deducts 1 daily salary; every 3 half days deduct 1 daily salary; Saturdays and Sundays are off.',
+      payrollDays,
+      rule: 'Payroll runs every calendar day from the 25th through the following month’s 25th. Saturdays and Sundays are paid off-days and never create absence deductions. Each absent weekday deducts 1 calendar-day salary; every 3 weekday half days deduct 1 calendar-day salary.',
       summary: {
         employees: rows.length,
         grossSalary: this.roundMoney(
@@ -417,63 +421,141 @@ export class ReportsService {
   }
 
   async getRawPunches(user: CurrentUser, query: RawPunchesQueryDto) {
-    const scope = this.resolveScope(user, query.organizationId);
+    return this.queryRawPunches(user, query, false);
+  }
+
+  async getAllRawPunches(query: AllRawPunchesQueryDto) {
+    const result = await this.queryRawPunches(null, query, true);
+    return { data: result.data, total: result.total };
+  }
+
+  private async queryRawPunches(
+    user: CurrentUser | null,
+    query: AllRawPunchesQueryDto & { page?: number; pageSize?: number },
+    includeAll: boolean,
+  ) {
+    const scope = user
+      ? this.resolveScope(user, query.organizationId)
+      : query.organizationId
+        ? { organizationId: query.organizationId }
+        : {};
     const page = query.page ?? 1;
     const pageSize = Math.min(query.pageSize ?? 100, 250);
     const search = query.search?.trim();
     const from = query.from ? new Date(query.from) : undefined;
     const to = query.to ? new Date(query.to) : undefined;
     if (from && to && from > to) {
-      throw new BadRequestException('From date/time must be before To date/time');
+      throw new BadRequestException(
+        'From date/time must be before To date/time',
+      );
     }
+    const matchingEmployeeIds = search
+      ? (
+          await this.prisma.employee.findMany({
+            where: {
+              ...(scope.organizationId
+                ? { organizationId: scope.organizationId }
+                : {}),
+              ...(scope.employeeId ? { id: scope.employeeId } : {}),
+              OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                {
+                  employeeCode: { contains: search, mode: 'insensitive' },
+                },
+              ],
+            },
+            select: { id: true },
+          })
+        ).map((employee) => employee.id)
+      : undefined;
+
+    if (matchingEmployeeIds?.length === 0) {
+      return { data: [], page, pageSize, total: 0 };
+    }
+
     const where = {
       ...this.createAttendanceWhere(scope),
+      ...(matchingEmployeeIds
+        ? { employeeId: { in: matchingEmployeeIds } }
+        : {}),
       ...((from || to) && {
         punchTime: {
           ...(from && { gte: from }),
           ...(to && { lte: to }),
         },
       }),
-      ...(search
-        ? {
-            employee: {
-              OR: [
-                { name: { contains: search, mode: 'insensitive' as const } },
-                {
-                  employeeCode: {
-                    contains: search,
-                    mode: 'insensitive' as const,
-                  },
-                },
-              ],
-            },
-          }
-        : {}),
     };
-    const [total, records] = await this.prisma.$transaction([
-      this.prisma.attendanceLog.count({ where }),
-      this.prisma.attendanceLog.findMany({
-        where,
-        include: {
-          employee: { include: { department: true } },
-          device: { select: { name: true } },
+    const records = await this.prisma.attendanceLog.findMany({
+      where,
+      select: {
+        id: true,
+        employeeId: true,
+        punchTime: true,
+        verificationType: true,
+        employee: {
+          select: {
+            employeeCode: true,
+            name: true,
+            department: { select: { name: true } },
+          },
         },
-        orderBy: { punchTime: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-    ]);
+        device: { select: { name: true } },
+      },
+      orderBy: { punchTime: 'desc' },
+      ...(includeAll ? {} : { skip: (page - 1) * pageSize, take: pageSize }),
+    });
+    const total = includeAll
+      ? records.length
+      : await this.prisma.attendanceLog.count({ where });
+    const employeeIds = [
+      ...new Set(records.map((record) => record.employeeId)),
+    ];
+    const punchTimes = records.map((record) => record.punchTime.getTime());
+    const attendance = employeeIds.length
+      ? await this.prisma.dailyAttendance.findMany({
+          where: {
+            employeeId: { in: employeeIds },
+            date: {
+              gte: new Date(Math.min(...punchTimes) - 86_400_000),
+              lte: new Date(Math.max(...punchTimes) + 86_400_000),
+            },
+          },
+          select: { employeeId: true, firstCheckIn: true, lastCheckOut: true },
+        })
+      : [];
+    const checkIns = new Set(
+      attendance.flatMap((row) =>
+        row.firstCheckIn
+          ? [`${row.employeeId}:${row.firstCheckIn.getTime()}`]
+          : [],
+      ),
+    );
+    const checkOuts = new Set(
+      attendance.flatMap((row) =>
+        row.lastCheckOut
+          ? [`${row.employeeId}:${row.lastCheckOut.getTime()}`]
+          : [],
+      ),
+    );
 
     return {
-      data: records.map((record) => ({
-        id: record.id,
-        employeeCode: record.employee.employeeCode,
-        employee: record.employee.name,
-        department: record.employee.department?.name ?? 'Unassigned',
-        device: record.device.name,
-        punchTime: record.punchTime.toISOString(),
-        verificationType: record.verificationType,
-      })),
+      data: records.map((record) => {
+        const punchKey = `${record.employeeId}:${record.punchTime.getTime()}`;
+        return {
+          id: record.id,
+          employeeCode: record.employee.employeeCode,
+          employee: record.employee.name,
+          department: record.employee.department?.name ?? 'Unassigned',
+          device: record.device.name,
+          punchTime: record.punchTime.toISOString(),
+          punchStatus: checkIns.has(punchKey)
+            ? 'CHECK_IN'
+            : checkOuts.has(punchKey)
+              ? 'CHECK_OUT'
+              : 'ADDITIONAL_PUNCH',
+          verificationType: record.verificationType,
+        };
+      }),
       page,
       pageSize,
       total,

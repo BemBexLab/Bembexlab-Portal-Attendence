@@ -2,13 +2,14 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import type { Employee, Shift } from "@/types/attendance";
+
 import {
   fetchDeviceInfo,
   getAttendanceRows,
   getAttendanceRowsForRange,
-  getAttendanceTrend,
+  getAnalytics,
   getDashboardSummary,
-  getDepartmentAttendance,
   getDevices,
   getEmployees,
   syncDeviceAttendance,
@@ -51,11 +52,15 @@ export function useAttendanceRows(date?: string) {
   });
 }
 
-export function useAttendanceRowsForRange(from: string, to: string) {
+export function useAttendanceRowsForRange(
+  from: string,
+  to: string,
+  enabled = true,
+) {
   return useQuery({
     queryKey: [...attendanceKeys.attendance, "range", from, to],
     queryFn: () => getAttendanceRowsForRange(from, to),
-    enabled: Boolean(from && to),
+    enabled: enabled && Boolean(from && to),
   });
 }
 
@@ -88,7 +93,9 @@ export function useAssignBulkAttendanceStatus() {
     mutationFn: assignBulkAttendanceStatus,
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.scheduledStatuses }),
+        queryClient.invalidateQueries({
+          queryKey: attendanceKeys.scheduledStatuses,
+        }),
         queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
         queryClient.invalidateQueries({ queryKey: ["reports"] }),
       ]);
@@ -103,7 +110,9 @@ export function useRemoveScheduledAttendanceStatus() {
     mutationFn: removeScheduledAttendanceStatus,
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.scheduledStatuses }),
+        queryClient.invalidateQueries({
+          queryKey: attendanceKeys.scheduledStatuses,
+        }),
         queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
         queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
         queryClient.invalidateQueries({ queryKey: ["reports"] }),
@@ -125,39 +134,82 @@ export function useShifts() {
 
 export function useCreateShift() {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: createShift, onSuccess: () => queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }) });
+  return useMutation({
+    mutationFn: createShift,
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
+  });
 }
 
 export function useUpdateShift() {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: updateShift, onSuccess: async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
-    ]);
-  } });
+  return useMutation({
+    mutationFn: updateShift,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
+      ]);
+    },
+  });
 }
 
 export function useDeleteShift() {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: deleteShift, onSuccess: async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
-    ]);
-  } });
+  return useMutation({
+    mutationFn: deleteShift,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+      ]);
+    },
+  });
 }
 
 export function useAssignEmployeeShift() {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: assignEmployeeShift, onSuccess: async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts }),
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
-      queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
-    ]);
-  } });
+  return useMutation({
+    mutationFn: assignEmployeeShift,
+    onSuccess: (_assignment, variables) => {
+      const shift = queryClient
+        .getQueryData<Shift[]>(attendanceKeys.shifts)
+        ?.find((item) => item.id === variables.shiftId);
+
+      if (shift) {
+        queryClient.setQueryData<Employee[]>(
+          attendanceKeys.employees,
+          (current) =>
+            current?.map((employee) =>
+              employee.id === variables.employeeId
+                ? {
+                    ...employee,
+                    shift: {
+                      id: shift.id,
+                      name: shift.name,
+                      startMinutes: shift.startMinutes,
+                      endMinutes: shift.endMinutes,
+                      effectiveFrom: variables.effectiveFrom,
+                    },
+                  }
+                : employee,
+            ),
+        );
+      }
+
+      // The assignment is already saved. Keep the UI responsive while the
+      // derived attendance and assignment counts refresh in the background.
+      void queryClient.invalidateQueries({
+        queryKey: attendanceKeys.employees,
+      });
+      void queryClient.invalidateQueries({ queryKey: attendanceKeys.shifts });
+      void queryClient.invalidateQueries({
+        queryKey: attendanceKeys.attendance,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["reports"] });
+    },
+  });
 }
 
 export function useUpdateEmployeeStatus() {
@@ -181,11 +233,23 @@ export function useUpdateEmployeeSalary() {
 
   return useMutation({
     mutationFn: updateEmployeeSalary,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
-        queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] }),
-      ]);
+    onSuccess: (updatedEmployee) => {
+      queryClient.setQueryData<Employee[]>(
+        attendanceKeys.employees,
+        (current) =>
+          current?.map((employee) =>
+            employee.id === updatedEmployee.id
+              ? { ...employee, monthlySalary: updatedEmployee.monthlySalary }
+              : employee,
+          ),
+      );
+
+      // Payroll recalculation can be slow. The salary itself is already saved,
+      // so refresh derived data without keeping the save action pending.
+      void queryClient.invalidateQueries({
+        queryKey: attendanceKeys.employees,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
     },
   });
 }
@@ -238,14 +302,27 @@ export function useSyncDeviceAttendance() {
 
 export function useDepartmentAttendance() {
   return useQuery({
-    queryKey: attendanceKeys.departments,
-    queryFn: getDepartmentAttendance,
+    queryKey: ["reports", "analytics"],
+    queryFn: getAnalytics,
+    select: (analytics) =>
+      analytics.departments.map((department) => ({
+        department: department.department,
+        present: department.present,
+        absent: department.absent,
+        late: department.late,
+      })),
   });
 }
 
 export function useAttendanceTrend() {
   return useQuery({
-    queryKey: attendanceKeys.trend,
-    queryFn: getAttendanceTrend,
+    queryKey: ["reports", "analytics"],
+    queryFn: getAnalytics,
+    select: (analytics) =>
+      analytics.trends.map((trend) => ({
+        day: trend.date.slice(5),
+        present: trend.present,
+        absent: trend.absent,
+      })),
   });
 }

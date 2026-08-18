@@ -15,11 +15,13 @@ import {
 export const reportKeys = {
   all: ["reports"] as const,
   daily: (date?: string) => ["reports", "daily", date ?? "today"] as const,
-  monthly: (month?: string) => ["reports", "monthly", month ?? "current"] as const,
+  monthly: (month?: string) =>
+    ["reports", "monthly", month ?? "current"] as const,
   lateArrivals: ["reports", "late-arrivals"] as const,
   overtime: ["reports", "overtime"] as const,
   analytics: ["reports", "analytics"] as const,
-  payroll: (month?: string) => ["reports", "payroll", month ?? "current"] as const,
+  payroll: (month?: string) =>
+    ["reports", "payroll", month ?? "current"] as const,
   rawPunches: (search: string, page: number, from?: string, to?: string) =>
     ["reports", "raw-punches", search, page, from, to] as const,
 };
@@ -59,17 +61,24 @@ export function useReportAnalytics() {
   });
 }
 
-export function usePayrollReport(month?: string) {
+export function usePayrollReport(month?: string, enabled = true) {
   return useQuery({
     queryKey: reportKeys.payroll(month),
     queryFn: () => getPayrollReport(month),
+    enabled,
   });
 }
 
-export function useRawPunches(search: string, page: number, from?: string, to?: string) {
+export function useRawPunches(
+  search: string,
+  page: number,
+  from?: string,
+  to?: string,
+) {
   return useQuery({
     queryKey: reportKeys.rawPunches(search, page, from, to),
     queryFn: () => getRawPunches(search, page, from, to),
     enabled: !from || !to || from <= to,
+    placeholderData: (previousData) => previousData,
   });
 }

@@ -51,7 +51,7 @@ export class OvertimeReportQueryDto extends DateRangeReportQueryDto {
   minimumMinutes?: number;
 }
 
-export class RawPunchesQueryDto extends OrganizationScopedQueryDto {
+export class AllRawPunchesQueryDto extends OrganizationScopedQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
@@ -63,7 +63,9 @@ export class RawPunchesQueryDto extends OrganizationScopedQueryDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+}
 
+export class RawPunchesQueryDto extends AllRawPunchesQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()

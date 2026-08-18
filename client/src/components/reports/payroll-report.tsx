@@ -1,12 +1,12 @@
 "use client";
 
 import { CalendarDays, Download, Search, WalletCards, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { usePayrollReport } from "@/hooks/use-reports";
-import { downloadCsv } from "@/lib/csv";
+import { downloadPayrollXlsx } from "@/lib/payroll-xlsx";
 import type { PayrollRow } from "@/types/attendance";
 
 function money(value: number) {
@@ -33,43 +33,12 @@ export function PayrollReportPanel() {
     );
   });
 
-  useEffect(() => {
-    if (!month && report?.month) {
-      setMonth(report.month);
-    }
-  }, [month, report?.month]);
-
-  const exportPayroll = () => {
+  const exportPayroll = async () => {
     if (!report?.rows.length) {
       return;
     }
 
-    downloadCsv(
-      `payroll-${report.month}.csv`,
-      report.rows.map((row) => ({
-        employeeCode: row.employeeCode,
-        employee: row.employee,
-        department: row.department,
-        monthlySalary: row.monthlySalary,
-        workingDays: row.workingDays,
-        presentDays: row.presentDays,
-        dailyRate: row.dailyRate,
-        absentDays: row.absentDays,
-        halfDays: row.halfDays,
-        halfDayDeductionDays: row.halfDayDeductionDays,
-        totalDeductionDays: row.totalDeductionDays,
-        deductionAmount: row.deductionAmount,
-        payableSalary: row.payableSalary,
-        absentDates: row.attendanceDetails
-          .filter((detail) => detail.status === "ABSENT")
-          .map((detail) => `${detail.date} (${detail.day})`)
-          .join("; "),
-        halfDayDates: row.attendanceDetails
-          .filter((detail) => detail.status === "HALF_DAY")
-          .map((detail) => `${detail.date} (${detail.day})`)
-          .join("; "),
-      })),
-    );
+    await downloadPayrollXlsx(report);
   };
 
   return (
@@ -106,17 +75,17 @@ export function PayrollReportPanel() {
               className="mt-1 block h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/20"
               onChange={(event) => setMonth(event.target.value)}
               type="month"
-              value={month}
+              value={month || report?.month || ""}
             />
           </label>
           <Button
             disabled={!report?.rows.length}
-            onClick={exportPayroll}
+            onClick={() => void exportPayroll()}
             type="button"
             variant="secondary"
           >
             <Download className="size-4" />
-            Payroll CSV
+            Payroll XLSX
           </Button>
         </div>
       </PanelHeader>
@@ -141,7 +110,7 @@ export function PayrollReportPanel() {
               <tr>
                 <th className="px-4 py-3 font-medium">Employee</th>
                 <th className="px-4 py-3 font-medium">Monthly salary</th>
-                <th className="px-4 py-3 font-medium">Working days</th>
+                <th className="px-4 py-3 font-medium">Payroll days</th>
                 <th className="px-4 py-3 font-medium">Daily rate</th>
                 <th className="px-4 py-3 font-medium">Absent</th>
                 <th className="px-4 py-3 font-medium">Half days</th>
@@ -171,7 +140,7 @@ export function PayrollReportPanel() {
                     </p>
                   </td>
                   <td className="px-4 py-3 tabular-nums">{money(row.monthlySalary)}</td>
-                  <td className="px-4 py-3 tabular-nums">{row.workingDays}</td>
+                  <td className="px-4 py-3 tabular-nums">{row.payrollDays}</td>
                   <td className="px-4 py-3 tabular-nums">{money(row.dailyRate)}</td>
                   <td className="px-4 py-3 tabular-nums">{row.absentDays}</td>
                   <td className="px-4 py-3 tabular-nums">
@@ -200,7 +169,7 @@ export function PayrollReportPanel() {
 
         {report ? (
           <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
-            Cycle {report.cycleStart} to {report.cycleEnd} · {report.workingDays} weekday working days · attendance assessed through {report.calculatedThrough ?? "not started"}. Each absence deducts 1 day; every 3 half days deduct 1 additional day.
+            Cycle {report.cycleStart} to {report.cycleEnd} · {report.payrollDays} paid calendar days · {report.workingDays} attendance working days · attendance assessed through {report.calculatedThrough ?? "not started"}. Weekends are paid and never deducted.
           </div>
         ) : null}
       </PanelBody>
@@ -243,7 +212,7 @@ export function PayrollReportPanel() {
           <div className="max-h-[calc(90vh-92px)] overflow-y-auto p-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {[
-                ["Total working days", selectedEmployee.workingDays],
+                ["Paid calendar days", selectedEmployee.payrollDays],
                 ["Total present days", selectedEmployee.presentDays],
                 ["Total absent days", selectedEmployee.absentDays],
                 ["Total half days", selectedEmployee.halfDays],

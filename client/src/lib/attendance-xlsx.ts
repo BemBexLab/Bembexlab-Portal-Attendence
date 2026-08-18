@@ -3,7 +3,6 @@ import type { AttendanceRow, AttendanceStatus } from "@/types/attendance";
 type MonthlyEmployee = {
   employeeCode: string;
   employee: string;
-  department: string;
   attendanceByDate: Map<string, AttendanceRow>;
 };
 
@@ -57,21 +56,18 @@ export async function downloadMonthlyAttendanceXlsx(
   const ExcelJS = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Monthly attendance", {
-    views: [{ state: "frozen", xSplit: 3, ySplit: 2 }],
+    views: [{ state: "frozen", xSplit: 2, ySplit: 2 }],
   });
 
   sheet.mergeCells("A1:A2");
   sheet.mergeCells("B1:B2");
-  sheet.mergeCells("C1:C2");
   sheet.getCell("A1").value = "EMPLOYEE ID";
   sheet.getCell("B1").value = "NAME";
-  sheet.getCell("C1").value = "DEPARTMENT";
   sheet.getColumn(1).width = 16;
   sheet.getColumn(2).width = 24;
-  sheet.getColumn(3).width = 22;
 
   dates.forEach((date, index) => {
-    const statusColumn = 4 + index * 2;
+    const statusColumn = 3 + index * 2;
     const checkInColumn = statusColumn + 1;
     const weekday = new Intl.DateTimeFormat("en-US", {
       timeZone: "UTC",
@@ -105,7 +101,6 @@ export async function downloadMonthlyAttendanceXlsx(
     const values: Array<string> = [
       employee.employeeCode,
       employee.employee,
-      employee.department,
     ];
 
     dates.forEach((date) => {
@@ -121,7 +116,7 @@ export async function downloadMonthlyAttendanceXlsx(
       const attendance = employee.attendanceByDate.get(date);
       if (!attendance) return;
 
-      const cell = row.getCell(4 + index * 2);
+      const cell = row.getCell(3 + index * 2);
       const colors = statusColors[attendance.status];
       cell.fill = {
         type: "pattern",
@@ -138,7 +133,7 @@ export async function downloadMonthlyAttendanceXlsx(
       cell.border = border;
       cell.alignment = {
         vertical: "middle",
-        horizontal: Number(cell.col) <= 3 ? "left" : "center",
+        horizontal: Number(cell.col) <= 2 ? "left" : "center",
         wrapText: true,
       };
       if (rowNumber <= 2) {
@@ -171,7 +166,6 @@ export async function downloadDailyAttendanceXlsx(
     "DATE",
     "EMPLOYEE ID",
     "NAME",
-    "DEPARTMENT",
     "CHECK-IN",
     "CHECK-OUT",
     "WORKING MINUTES",
@@ -184,13 +178,12 @@ export async function downloadDailyAttendanceXlsx(
       attendance.date,
       attendance.employeeCode,
       attendance.employee,
-      attendance.department,
       attendance.arrival ?? "-",
       attendance.exit ?? "-",
       attendance.workingMinutes,
       formatStatus(attendance.status),
     ]);
-    const statusCell = row.getCell(8);
+    const statusCell = row.getCell(7);
     const colors = statusColors[attendance.status];
     statusCell.fill = {
       type: "pattern",
@@ -200,10 +193,10 @@ export async function downloadDailyAttendanceXlsx(
     statusCell.font = { color: { argb: colors.font }, bold: true };
   });
 
-  [14, 16, 24, 22, 14, 14, 18, 22].forEach((width, index) => {
+  [14, 16, 24, 14, 14, 18, 22].forEach((width, index) => {
     sheet.getColumn(index + 1).width = width;
   });
-  sheet.autoFilter = { from: "A1", to: "H1" };
+  sheet.autoFilter = { from: "A1", to: "G1" };
   sheet.eachRow((row, rowNumber) => {
     row.height = 24;
     row.eachCell({ includeEmpty: true }, (cell) => {

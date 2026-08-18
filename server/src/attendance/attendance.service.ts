@@ -256,6 +256,7 @@ export class AttendanceService {
     ].includes(dto.status)
       ? shiftEnd
       : undefined;
+    const automaticCheckoutAt = new Date(shiftEnd.getTime() + 60 * 60_000);
     const removePreviousAutomaticCheckout =
       (dto.status === AttendanceStatus.REMOTE ||
         dto.status === AttendanceStatus.ON_LEAVE) &&
@@ -266,7 +267,7 @@ export class AttendanceService {
         statusOverride: dto.status,
         statusOverrideAt: databaseNow,
         statusOverrideBy: user.id,
-        ...(automaticCheckout && automaticCheckout <= databaseNow
+        ...(automaticCheckout && automaticCheckoutAt <= databaseNow
           ? { lastCheckOut: automaticCheckout }
           : {}),
         ...(removePreviousAutomaticCheckout ? { lastCheckOut: null } : {}),
@@ -279,7 +280,7 @@ export class AttendanceService {
         statusOverride: dto.status,
         statusOverrideAt: databaseNow,
         statusOverrideBy: user.id,
-        ...(automaticCheckout && automaticCheckout <= databaseNow
+        ...(automaticCheckout && automaticCheckoutAt <= databaseNow
           ? { lastCheckOut: automaticCheckout }
           : {}),
       },

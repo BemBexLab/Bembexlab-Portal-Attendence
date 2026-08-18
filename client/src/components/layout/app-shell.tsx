@@ -7,13 +7,13 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  MonitorCheck,
   Rows3,
   Clock4,
   CalendarRange,
   UsersRound,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -61,8 +61,14 @@ export function AppShell({ children, title, description }: AppShellProps) {
           )}
         >
           <div className="flex h-14 items-center gap-3 border-b border-sidebar-border px-4">
-            <div className="grid size-8 place-items-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-              <MonitorCheck className="size-4" />
+            <div className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-md border border-sidebar-border bg-white">
+              <Image
+                alt="Bembex Portal"
+                className="size-7 object-contain"
+                height={28}
+                src="/WhatsApp Image 2026-08-12 at 11.20.01 AM.jpeg"
+                width={28}
+              />
             </div>
             {sidebarOpen ? (
               <div className="min-w-0">

@@ -1,10 +1,11 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
-import { useDeferredValue, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { useRawPunches } from "@/hooks/use-reports";
 
@@ -37,14 +38,18 @@ function pakistanDateToIso(value: string, endOfDay = false) {
 
 export default function RawDataPage() {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const deferredSearch = useDeferredValue(search.trim());
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => window.clearTimeout(timer);
+  }, [search]);
   const fromIso = pakistanDateToIso(from);
   const toIso = pakistanDateToIso(to, true);
   const validRange = !fromIso || !toIso || fromIso <= toIso;
-  const punches = useRawPunches(deferredSearch, page, fromIso, toIso);
+  const punches = useRawPunches(debouncedSearch, page, fromIso, toIso);
   const totalPages = Math.max(
     1,
     Math.ceil((punches.data?.total ?? 0) / (punches.data?.pageSize ?? 100)),
@@ -82,7 +87,7 @@ export default function RawDataPage() {
                   <th className="px-4 py-3 font-medium">Punch time</th>
                   <th className="px-4 py-3 font-medium">Employee code</th>
                   <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Department</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Device</th>
                   <th className="px-4 py-3 font-medium">Verification</th>
                 </tr>
@@ -97,9 +102,7 @@ export default function RawDataPage() {
                       {punch.employeeCode}
                     </td>
                     <td className="px-4 py-3">{punch.employee}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {punch.department}
-                    </td>
+                    <td className="px-4 py-3"><Badge tone={punch.punchStatus === "CHECK_IN" ? "green" : punch.punchStatus === "CHECK_OUT" ? "blue" : "neutral"}>{punch.punchStatus === "CHECK_IN" ? "Check-in" : punch.punchStatus === "CHECK_OUT" ? "Check-out" : "Additional punch"}</Badge></td>
                     <td className="px-4 py-3">{punch.device}</td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {formatVerification(punch.verificationType)}
@@ -112,7 +115,7 @@ export default function RawDataPage() {
 
           {!punches.isLoading && !punches.data?.data.length ? (
             <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-              No punches found{deferredSearch ? ` for “${deferredSearch}”` : ""}.
+              No punches found{debouncedSearch ? ` for “${debouncedSearch}”` : ""}.
             </p>
           ) : null}
 

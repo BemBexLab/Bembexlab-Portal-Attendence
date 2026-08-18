@@ -24,27 +24,46 @@ export async function getShifts() {
   return response.data;
 }
 
-export async function createShift(input: { name: string; startMinutes: number; endMinutes: number }) {
+export async function createShift(input: {
+  name: string;
+  startMinutes: number;
+  endMinutes: number;
+}) {
   const response = await api.post<Shift>("/shifts", input);
   return response.data;
 }
 
-export async function updateShift(input: { id: string; name?: string; startMinutes?: number; endMinutes?: number; isActive?: boolean }) {
+export async function updateShift(input: {
+  id: string;
+  name?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  isActive?: boolean;
+}) {
   const { id, ...data } = input;
   const response = await api.patch<Shift>(`/shifts/${id}`, data);
   return response.data;
 }
 
 export async function deleteShift(id: string) {
-  const response = await api.delete<{ id: string; removedAssignments: number }>(`/shifts/${id}`);
+  const response = await api.delete<{ id: string; removedAssignments: number }>(
+    `/shifts/${id}`,
+  );
   return response.data;
 }
 
-export async function assignEmployeeShift(input: { employeeId: string; shiftId: string; effectiveFrom: string }) {
-  const response = await api.post(`/shifts/employees/${input.employeeId}/assign`, {
-    shiftId: input.shiftId,
-    effectiveFrom: input.effectiveFrom,
-  });
+export async function assignEmployeeShift(input: {
+  employeeId: string;
+  shiftId: string;
+  effectiveFrom: string;
+}) {
+  const response = await api.post(
+    `/shifts/employees/${input.employeeId}/assign`,
+    {
+      shiftId: input.shiftId,
+      effectiveFrom: input.effectiveFrom,
+    },
+  );
   return response.data;
 }
 
@@ -149,8 +168,10 @@ export async function getDashboardSummary() {
     presentCount: dailyReport.summary.presentCount,
     absentCount: dailyReport.summary.absentCount,
     lateCount: dailyReport.summary.lateCount,
-    activeDevices: liveDevices.filter((device) => device.status === "ACTIVE").length,
-    offlineDevices: liveDevices.filter((device) => device.status === "OFFLINE").length,
+    activeDevices: liveDevices.filter((device) => device.status === "ACTIVE")
+      .length,
+    offlineDevices: liveDevices.filter((device) => device.status === "OFFLINE")
+      .length,
   };
 }
 
@@ -162,7 +183,9 @@ export async function testDevice(deviceId: string) {
 }
 
 export async function fetchDeviceInfo(deviceId: string) {
-  const response = await api.get<DeviceInfoResponse>(`/devices/${deviceId}/info`);
+  const response = await api.get<DeviceInfoResponse>(
+    `/devices/${deviceId}/info`,
+  );
   return response.data;
 }
 
@@ -219,7 +242,7 @@ async function getDailyReport(date?: string) {
   return response.data;
 }
 
-async function getAnalytics() {
+export async function getAnalytics() {
   const response = await api.get<ReportAnalytics>("/reports/analytics");
   return response.data;
 }

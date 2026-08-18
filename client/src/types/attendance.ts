@@ -42,6 +42,7 @@ export type PayrollRow = {
   employee: string;
   department: string;
   monthlySalary: number;
+  payrollDays: number;
   workingDays: number;
   assessedWorkingDays: number;
   dailyRate: number;
@@ -66,6 +67,7 @@ export type PayrollReport = {
   cycleEnd: string;
   calculatedThrough: string | null;
   workingDays: number;
+  payrollDays: number;
   rule: string;
   summary: {
     employees: number;
@@ -74,6 +76,25 @@ export type PayrollReport = {
     payableSalary: number;
   };
   rows: PayrollRow[];
+};
+
+export type EmployeeHistoryReport = {
+  employee: {
+    id: string;
+    employeeCode: string;
+    name: string;
+    department: string;
+    organization: string;
+  };
+  from: string;
+  to: string;
+  rows: Array<{
+    date: string;
+    firstCheckIn: string | null;
+    lastCheckOut: string | null;
+    workingMinutes: number;
+    status: AttendanceStatus;
+  }>;
 };
 
 export type AttendanceRow = {
@@ -106,6 +127,7 @@ export type RawPunch = {
   department: string;
   device: string;
   punchTime: string;
+  punchStatus: "CHECK_IN" | "CHECK_OUT" | "ADDITIONAL_PUNCH";
   verificationType: string;
 };
 

@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import type {
   AttendanceExportReport,
   DailyReport,
+  EmployeeHistoryReport,
   LateArrivalsReport,
   MonthlyReport,
   OvertimeReport,
@@ -50,7 +51,24 @@ export function getPayrollReport(month?: string) {
   return getReport<PayrollReport>("/reports/payroll", { month });
 }
 
-export function getRawPunches(search: string, page: number, from?: string, to?: string, pageSize = 100) {
+export function getEmployeeHistory(
+  employeeId: string,
+  from: string,
+  to: string,
+) {
+  return getReport<EmployeeHistoryReport>(
+    `/reports/employees/${employeeId}/history`,
+    { from, to },
+  );
+}
+
+export function getRawPunches(
+  search: string,
+  page: number,
+  from?: string,
+  to?: string,
+  pageSize = 100,
+) {
   return getReport<PaginatedResponse<RawPunch>>("/reports/raw-punches", {
     search: search || undefined,
     from,

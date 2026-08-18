@@ -11,19 +11,23 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   findByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: {
-        email: email.toLowerCase().trim(),
-      },
-    });
+    return this.withTransientConnectionRetry(() =>
+      this.prisma.user.findUnique({
+        where: {
+          email: email.toLowerCase().trim(),
+        },
+      }),
+    );
   }
 
   findById(id: string) {
-    return this.prisma.user.findUnique({
-      where: {
-        id,
-      },
-    });
+    return this.withTransientConnectionRetry(() =>
+      this.prisma.user.findUnique({
+        where: {
+          id,
+        },
+      }),
+    );
   }
 
   async listEmployees(user: CurrentUser) {
@@ -167,5 +171,28 @@ export class UsersService {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+
+  private async withTransientConnectionRetry<T>(operation: () => Promise<T>) {
+    const delays = [250, 750];
+
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : '';
+        const transientConnectionError =
+          message.includes('connection timeout') ||
+          message.includes('connection terminated') ||
+          message.includes('connection reset');
+
+        if (!transientConnectionError || attempt >= delays.length) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+      }
+    }
   }
 }

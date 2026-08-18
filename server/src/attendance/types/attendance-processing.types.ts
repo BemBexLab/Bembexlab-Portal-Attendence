@@ -3,6 +3,8 @@ export const SYNC_ALL_DEVICES_JOB = 'sync-all-devices';
 
 export type ProcessedDeviceResult = {
   deviceId: string;
+  organizationId: string;
+  deviceUserIds: string[];
   fetched: number;
   stored: number;
   duplicates: number;

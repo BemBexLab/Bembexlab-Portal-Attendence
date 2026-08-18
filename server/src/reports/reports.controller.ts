@@ -9,11 +9,13 @@ import {
 import { UserRole } from '@prisma/client';
 
 import { CurrentUserDecorator } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import type { CurrentUser } from '../auth/types/current-user.type';
 import {
+  AllRawPunchesQueryDto,
   DailyReportQueryDto,
   DateRangeReportQueryDto,
   LateArrivalsReportQueryDto,
@@ -73,6 +75,12 @@ export class ReportsController {
     @Query() query: RawPunchesQueryDto,
   ) {
     return this.reportsService.getRawPunches(user, query);
+  }
+
+  @Get('raw-punches/all')
+  @Public()
+  allRawPunches(@Query() query: AllRawPunchesQueryDto) {
+    return this.reportsService.getAllRawPunches(query);
   }
 
   @Get('employees/:employeeId/history')

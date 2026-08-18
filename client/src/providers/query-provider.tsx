@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { RealtimeProvider } from "./realtime-provider";
+import { GlobalDataLoader } from "@/components/ui/global-data-loader";
 
 type QueryProviderProps = {
   children: ReactNode;
@@ -18,7 +19,8 @@ export function QueryProvider({ children }: QueryProviderProps) {
           queries: {
             refetchOnWindowFocus: false,
             retry: 1,
-            staleTime: 30_000,
+            staleTime: 120_000,
+            gcTime: 10 * 60_000,
           },
         },
       }),
@@ -26,7 +28,10 @@ export function QueryProvider({ children }: QueryProviderProps) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <RealtimeProvider>{children}</RealtimeProvider>
+      <RealtimeProvider>
+        {children}
+        <GlobalDataLoader />
+      </RealtimeProvider>
     </QueryClientProvider>
   );
 }

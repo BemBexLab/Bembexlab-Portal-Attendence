@@ -24,6 +24,7 @@ type AffectedAttendanceDay = {
 
 const GRACE_MINUTES = 15;
 const PUNCH_WINDOW_MINUTES = 4 * 60;
+const AUTOMATIC_CHECKOUT_DELAY_MINUTES = 60;
 
 @Injectable()
 export class AttendanceProcessingService {
@@ -78,9 +79,112 @@ export class AttendanceProcessingService {
       }
     }
 
-    await this.enforceTwoMonthRetention();
+    const organizationIds = [
+      ...new Set(devices.map((device) => device.organizationId)),
+    ];
+    for (const organizationId of organizationIds) {
+      const organizationDevices = devices.filter(
+        (device) => device.organizationId === organizationId,
+      );
+      const successfulDevices = result.devices.filter(
+        (device) => device.organizationId === organizationId,
+      );
+
+      // Never remove employees from a partial snapshot. Every configured
+      // device for the organization must have returned its user list.
+      if (successfulDevices.length !== organizationDevices.length) continue;
+
+      const deviceUserIds = [
+        ...new Set(successfulDevices.flatMap((device) => device.deviceUserIds)),
+      ];
+      const removed = await this.markMissingDeviceEmployeesDeleted(
+        organizationId,
+        deviceUserIds,
+      );
+      if (removed > 0) {
+        this.logger.log(
+          `Removed ${removed} employee${removed === 1 ? '' : 's'} missing from the organization's K40 devices`,
+        );
+      }
+    }
+
+    const automaticCheckouts = await this.finalizeDueAutomaticCheckouts();
+    if (automaticCheckouts > 0) {
+      this.logger.log(
+        `Marked ${automaticCheckouts} forgotten checkout${automaticCheckouts === 1 ? '' : 's'} at the scheduled shift end`,
+      );
+    }
 
     return result;
+  }
+
+  private async markMissingDeviceEmployeesDeleted(
+    organizationId: string,
+    deviceUserIds: string[],
+  ) {
+    const result = await this.prisma.employee.updateMany({
+      where: {
+        organizationId,
+        isActive: true,
+        deviceUserId:
+          deviceUserIds.length > 0
+            ? { not: null, notIn: deviceUserIds }
+            : { not: null },
+      },
+      data: { isActive: false },
+    });
+
+    return result.count;
+  }
+
+  private async finalizeDueAutomaticCheckouts() {
+    const databaseNow = await this.prisma.databaseNow();
+    const dueBefore = new Date(
+      databaseNow.getTime() - AUTOMATIC_CHECKOUT_DELAY_MINUTES * 60_000,
+    );
+    const eligibleStatuses = new Set<AttendanceStatus>([
+      AttendanceStatus.PRESENT,
+      AttendanceStatus.HALF_DAY,
+      AttendanceStatus.MISSING_CHECKOUT,
+    ]);
+    const records = await this.prisma.dailyAttendance.findMany({
+      where: {
+        firstCheckIn: { not: null },
+        lastCheckOut: null,
+        scheduledEnd: { not: null, lte: dueBefore },
+      },
+      select: {
+        id: true,
+        firstCheckIn: true,
+        scheduledEnd: true,
+        status: true,
+        statusOverride: true,
+      },
+      orderBy: { scheduledEnd: 'asc' },
+      take: 500,
+    });
+    const eligible = records.filter((record) =>
+      eligibleStatuses.has(record.statusOverride ?? record.status),
+    );
+
+    for (const record of eligible) {
+      const firstCheckIn = record.firstCheckIn as Date;
+      const scheduledEnd = record.scheduledEnd as Date;
+      await this.prisma.dailyAttendance.updateMany({
+        where: { id: record.id, lastCheckOut: null },
+        data: {
+          lastCheckOut: scheduledEnd,
+          workingMinutes: Math.max(
+            0,
+            Math.floor(
+              (scheduledEnd.getTime() - firstCheckIn.getTime()) / 60_000,
+            ),
+          ),
+        },
+      });
+    }
+
+    return eligible.length;
   }
 
   async enforceTwoMonthRetention() {
@@ -88,26 +192,76 @@ export class AttendanceProcessingService {
     const { retainedDateKey, dailyCutoff, punchCutoff } =
       this.getRetentionCutoffs(now);
 
-    const [dailyAttendance, attendanceLogs] = await this.prisma.$transaction([
-      this.prisma.dailyAttendance.deleteMany({
-        where: { date: { lt: dailyCutoff } },
-      }),
-      this.prisma.attendanceLog.deleteMany({
-        where: { punchTime: { lt: punchCutoff } },
-      }),
-    ]);
+    const organizations = await this.prisma.organization.findMany({
+      select: { id: true },
+    });
+    let dailyAttendanceDeleted = 0;
+    let attendanceLogsDeleted = 0;
 
-    if (dailyAttendance.count > 0 || attendanceLogs.count > 0) {
+    for (const organization of organizations) {
+      dailyAttendanceDeleted += await this.deleteDailyAttendanceInBatches(
+        organization.id,
+        dailyCutoff,
+      );
+      attendanceLogsDeleted += await this.deleteAttendanceLogsInBatches(
+        organization.id,
+        punchCutoff,
+      );
+    }
+
+    if (dailyAttendanceDeleted > 0 || attendanceLogsDeleted > 0) {
       this.logger.log(
-        `Attendance retention removed ${dailyAttendance.count} daily rows and ${attendanceLogs.count} raw punches older than ${retainedDateKey}`,
+        `Attendance retention removed ${dailyAttendanceDeleted} daily rows and ${attendanceLogsDeleted} raw punches older than ${retainedDateKey}`,
       );
     }
 
     return {
       retainedFrom: retainedDateKey,
-      dailyAttendanceDeleted: dailyAttendance.count,
-      attendanceLogsDeleted: attendanceLogs.count,
+      dailyAttendanceDeleted,
+      attendanceLogsDeleted,
     };
+  }
+
+  private async deleteDailyAttendanceInBatches(
+    organizationId: string,
+    cutoff: Date,
+  ) {
+    let deleted = 0;
+    while (true) {
+      const rows = await this.prisma.dailyAttendance.findMany({
+        where: { organizationId, date: { lt: cutoff } },
+        select: { id: true },
+        orderBy: { date: 'asc' },
+        take: 250,
+      });
+      if (rows.length === 0) return deleted;
+      const result = await this.prisma.dailyAttendance.deleteMany({
+        where: { id: { in: rows.map((row) => row.id) } },
+      });
+      if (result.count === 0) return deleted;
+      deleted += result.count;
+    }
+  }
+
+  private async deleteAttendanceLogsInBatches(
+    organizationId: string,
+    cutoff: Date,
+  ) {
+    let deleted = 0;
+    while (true) {
+      const rows = await this.prisma.attendanceLog.findMany({
+        where: { organizationId, punchTime: { lt: cutoff } },
+        select: { id: true },
+        orderBy: { punchTime: 'asc' },
+        take: 250,
+      });
+      if (rows.length === 0) return deleted;
+      const result = await this.prisma.attendanceLog.deleteMany({
+        where: { id: { in: rows.map((row) => row.id) } },
+      });
+      if (result.count === 0) return deleted;
+      deleted += result.count;
+    }
   }
 
   async rebuildDailyAttendanceFromStoredPunches() {
@@ -288,6 +442,10 @@ export class AttendanceProcessingService {
           }
         }
 
+        if (latestStoredLog && punch.punchTime < latestStoredLog.punchTime) {
+          return [];
+        }
+
         return {
           organizationId: device.organizationId,
           employeeId,
@@ -296,13 +454,15 @@ export class AttendanceProcessingService {
           verificationType: punch.verificationType,
         };
       });
-      const createResult =
-        rawLogs.length > 0
-          ? await this.prisma.attendanceLog.createMany({
-              data: rawLogs,
-              skipDuplicates: true,
-            })
-          : { count: 0 };
+      let createdLogCount = 0;
+      for (let index = 0; index < rawLogs.length; index += 250) {
+        const result = await this.prisma.attendanceLog.createMany({
+          data: rawLogs.slice(index, index + 250),
+          skipDuplicates: true,
+        });
+        createdLogCount += result.count;
+      }
+      const createResult = { count: createdLogCount };
       if (createResult.count === 0) {
         affectedDays.clear();
       }
@@ -360,6 +520,8 @@ export class AttendanceProcessingService {
 
       return {
         deviceId: device.id,
+        organizationId: device.organizationId,
+        deviceUserIds: deviceUsers.map((user) => user.deviceUserId),
         fetched: punches.length,
         stored: createResult.count,
         duplicates: rawLogs.length - createResult.count,
@@ -470,16 +632,20 @@ export class AttendanceProcessingService {
       : AttendanceStatus.ABSENT;
     const effectiveStatus = existing?.statusOverride ?? status;
     const shiftEnd = scheduledEnd;
+    const automaticCheckoutAt = new Date(
+      shiftEnd.getTime() + AUTOMATIC_CHECKOUT_DELAY_MINUTES * 60_000,
+    );
     const automaticCheckoutStatuses = new Set<AttendanceStatus>([
       AttendanceStatus.PRESENT,
       AttendanceStatus.HALF_DAY,
       AttendanceStatus.MISSING_CHECKOUT,
     ]);
     const finalCheckOut =
-      databaseNow.getTime() >= shiftEnd.getTime() &&
+      lastCheckOut ??
+      (databaseNow.getTime() >= automaticCheckoutAt.getTime() &&
       automaticCheckoutStatuses.has(effectiveStatus)
         ? shiftEnd
-        : lastCheckOut;
+        : null);
     const workingMinutes =
       firstCheckIn && finalCheckOut
         ? Math.max(

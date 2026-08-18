@@ -1,7 +1,13 @@
 "use client";
 
 import { CalendarDays, ChevronDown, Download, Search } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import {
+  Fragment,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { AttendanceStatusBadge } from "@/components/attendance/status-badge";
@@ -102,6 +108,7 @@ export function AttendanceTable() {
   const monthlyAttendance = useAttendanceRowsForRange(
     cycle.from,
     cycleQueryTo,
+    view === "monthly",
   );
   const updateStatus = useUpdateAttendanceStatus();
   const [openStatusMenu, setOpenStatusMenu] = useState<{
@@ -110,16 +117,20 @@ export function AttendanceTable() {
     left: number;
   } | null>(null);
   const search = useDashboardStore((state) => state.attendanceSearch);
+  const deferredSearch = useDeferredValue(search);
   const department = useDashboardStore((state) => state.departmentFilter);
   const setSearch = useDashboardStore((state) => state.setAttendanceSearch);
   const setDepartment = useDashboardStore((state) => state.setDepartmentFilter);
-  const rows =
-    view === "monthly"
-      ? (monthlyAttendance.data?.rows ?? []).filter((row) => {
-          const weekday = new Date(`${row.date}T00:00:00.000Z`).getUTCDay();
-          return weekday !== 0 && weekday !== 6;
-        })
-      : attendance.data?.rows ?? [];
+  const rows = useMemo(
+    () =>
+      view === "monthly"
+        ? (monthlyAttendance.data?.rows ?? []).filter((row) => {
+            const weekday = new Date(`${row.date}T00:00:00.000Z`).getUTCDay();
+            return weekday !== 0 && weekday !== 6;
+          })
+        : (attendance.data?.rows ?? []),
+    [attendance.data?.rows, monthlyAttendance.data?.rows, view],
+  );
 
   useEffect(() => {
     if (!openStatusMenu) {
@@ -135,39 +146,58 @@ export function AttendanceTable() {
       window.removeEventListener("scroll", closeMenu, true);
     };
   }, [openStatusMenu]);
-  const departments = [
-    "All departments",
-    ...Array.from(new Set(rows.map((row) => row.department))),
-  ];
-  const filteredRows = rows.filter((row) => {
-    const matchesSearch =
-      row.employee.toLowerCase().includes(search.toLowerCase()) ||
-      row.department.toLowerCase().includes(search.toLowerCase());
-    const matchesDepartment =
-      department === "All departments" || row.department === department;
+  const departments = useMemo(
+    () => [
+      "All departments",
+      ...Array.from(new Set(rows.map((row) => row.department))),
+    ],
+    [rows],
+  );
+  const filteredRows = useMemo(() => {
+    const normalizedSearch = deferredSearch.toLowerCase();
+    return rows.filter((row) => {
+      const matchesSearch =
+        row.employee.toLowerCase().includes(normalizedSearch) ||
+        row.department.toLowerCase().includes(normalizedSearch);
+      const matchesDepartment =
+        department === "All departments" || row.department === department;
 
-    return matchesSearch && matchesDepartment;
-  });
-  const monthlyDates = Array.from(new Set(rows.map((row) => row.date))).sort();
-  const monthlyEmployees = Array.from(
-    filteredRows.reduce((employees, row) => {
-      const employee = employees.get(row.employeeId) ?? {
-        id: row.employeeId,
-        employeeCode: row.employeeCode,
-        employee: row.employee,
-        department: row.department,
-        attendanceByDate: new Map<string, AttendanceRow>(),
-      };
-      employee.attendanceByDate.set(row.date, row);
-      employees.set(row.employeeId, employee);
-      return employees;
-    }, new Map<string, {
-      id: string;
-      employeeCode: string;
-      employee: string;
-      department: string;
-      attendanceByDate: Map<string, AttendanceRow>;
-    }>()).values(),
+      return matchesSearch && matchesDepartment;
+    });
+  }, [deferredSearch, department, rows]);
+  const monthlyDates = useMemo(
+    () => Array.from(new Set(rows.map((row) => row.date))).sort(),
+    [rows],
+  );
+  const monthlyEmployees = useMemo(
+    () =>
+      Array.from(
+        filteredRows
+          .reduce(
+            (employees, row) => {
+              const employee = employees.get(row.employeeId) ?? {
+                id: row.employeeId,
+                employeeCode: row.employeeCode,
+                employee: row.employee,
+                attendanceByDate: new Map<string, AttendanceRow>(),
+              };
+              employee.attendanceByDate.set(row.date, row);
+              employees.set(row.employeeId, employee);
+              return employees;
+            },
+            new Map<
+              string,
+              {
+                id: string;
+                employeeCode: string;
+                employee: string;
+                attendanceByDate: Map<string, AttendanceRow>;
+              }
+            >(),
+          )
+          .values(),
+      ),
+    [filteredRows],
   );
   const exportXlsx = async () => {
     const period =
@@ -338,7 +368,13 @@ export function AttendanceTable() {
               value={search}
             />
           </label>
-          <Select ariaLabel="Filter by department" className="min-w-44" onChange={setDepartment} options={departments.map((item) => ({ value: item, label: item }))} value={department} />
+          <Select
+            ariaLabel="Filter by department"
+            className="min-w-44"
+            onChange={setDepartment}
+            options={departments.map((item) => ({ value: item, label: item }))}
+            value={department}
+          />
         </div>
       </PanelHeader>
       <PanelBody className="p-0">
@@ -346,7 +382,7 @@ export function AttendanceTable() {
           {view === "monthly" ? (
             <table
               className="border-separate border-spacing-0 text-left text-xs"
-              style={{ minWidth: 440 + monthlyDates.length * 240 }}
+              style={{ minWidth: 280 + monthlyDates.length * 240 }}
             >
               <thead className="text-muted-foreground">
                 <tr>
@@ -361,12 +397,6 @@ export function AttendanceTable() {
                     rowSpan={2}
                   >
                     Name
-                  </th>
-                  <th
-                    className="sticky left-[17rem] z-20 w-40 min-w-40 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
-                    rowSpan={2}
-                  >
-                    Department
                   </th>
                   {monthlyDates.map((date) => {
                     const heading = formatCycleDate(date);
@@ -421,9 +451,6 @@ export function AttendanceTable() {
                     <td className="sticky left-28 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted/40">
                       {employee.employee}
                     </td>
-                    <td className="sticky left-[17rem] z-10 border-b border-r border-border bg-card px-3 py-3 text-muted-foreground group-hover:bg-muted/40">
-                      {employee.department}
-                    </td>
                     {monthlyDates.map((date) => {
                       const row = employee.attendanceByDate.get(date);
                       return (
@@ -442,11 +469,10 @@ export function AttendanceTable() {
               </tbody>
             </table>
           ) : (
-            <table className="w-full min-w-[780px] text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Department</th>
                   <th className="px-4 py-3 font-medium">Arrival</th>
                   <th className="px-4 py-3 font-medium">Exit</th>
                   <th className="px-4 py-3 font-medium">Working Hours</th>
@@ -457,17 +483,12 @@ export function AttendanceTable() {
                 {filteredRows.map((row) => (
                   <tr className="hover:bg-muted/40" key={row.id}>
                     <td className="px-4 py-3 font-medium">{row.employee}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {row.department}
-                    </td>
                     <td className="px-4 py-3">{row.arrival ?? "-"}</td>
                     <td className="px-4 py-3">{row.exit ?? "-"}</td>
                     <td className="px-4 py-3">
                       {formatHours(row.workingMinutes)}
                     </td>
-                    <td className="px-4 py-3">
-                      {renderStatusControl(row)}
-                    </td>
+                    <td className="px-4 py-3">{renderStatusControl(row)}</td>
                   </tr>
                 ))}
               </tbody>
