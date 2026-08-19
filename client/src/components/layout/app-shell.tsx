@@ -5,7 +5,6 @@ import {
   CalendarDays,
   Fingerprint,
   LayoutDashboard,
-  LogOut,
   Menu,
   Rows3,
   Clock4,
@@ -14,12 +13,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
-import { useLogout } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
@@ -44,8 +42,6 @@ type AppShellProps = {
 
 export function AppShell({ children, title, description }: AppShellProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const logout = useLogout();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
   const user = useAuthStore((state) => state.user);
@@ -103,28 +99,6 @@ export function AppShell({ children, title, description }: AppShellProps) {
             })}
           </nav>
 
-          <div className="border-t border-sidebar-border p-2">
-            <button
-              aria-label="Log out"
-              className={cn(
-                "flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-accent disabled:cursor-wait disabled:opacity-60",
-                !sidebarOpen && "justify-center px-0",
-              )}
-              disabled={logout.isPending}
-              onClick={() => {
-                logout.mutate(undefined, {
-                  onSettled: () => router.replace("/login"),
-                });
-              }}
-              title="Log out"
-              type="button"
-            >
-              <LogOut className="size-4 shrink-0" />
-              {sidebarOpen ? (
-                <span>{logout.isPending ? "Logging out..." : "Log out"}</span>
-              ) : null}
-            </button>
-          </div>
         </aside>
 
         <div className={cn("md:pl-64", !sidebarOpen && "md:pl-16")}>

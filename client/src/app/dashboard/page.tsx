@@ -57,7 +57,7 @@ export default function DashboardPage() {
       title="Dashboard"
     >
       <div className="space-y-5">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {/* <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard
             detail="Employees checked in"
             icon={CalendarCheck}
@@ -88,7 +88,7 @@ export default function DashboardPage() {
             label="Device Status"
             value={`${data?.activeDevices ?? 0} active`}
           />
-        </div>
+        </div> */}
 
         <div className="grid items-start gap-4 xl:grid-cols-12">
           <AttendanceTrendChart className="xl:col-span-7 xl:row-span-2" />

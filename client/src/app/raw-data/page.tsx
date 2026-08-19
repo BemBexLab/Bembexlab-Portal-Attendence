@@ -11,12 +11,18 @@ import { useRawPunches } from "@/hooks/use-reports";
 import { getRawPunchesExport } from "@/services/report-service";
 import { downloadRawPunchesXlsx } from "@/lib/attendance-xlsx";
 
-function formatPunchTime(value: string) {
-  return new Date(value).toLocaleString([], {
+function formatPunchDate(value: string) {
+  return new Date(value).toLocaleDateString([], {
     timeZone: "Asia/Karachi",
     year: "numeric",
     month: "short",
     day: "2-digit",
+  });
+}
+
+function formatPunchClock(value: string) {
+  return new Date(value).toLocaleTimeString([], {
+    timeZone: "Asia/Karachi",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -24,18 +30,16 @@ function formatPunchTime(value: string) {
   });
 }
 
-function formatVerification(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(" ");
-}
+function pakistanDateTimeToIso(
+  date: string,
+  time: string,
+  endOfDay = false,
+) {
+  if (!date) return undefined;
 
-function pakistanDateToIso(value: string, endOfDay = false) {
-  return value
-    ? new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+05:00`).toISOString()
-    : undefined;
+  const clock = time || (endOfDay ? "23:59:59.999" : "00:00:00.000");
+  const normalizedClock = clock.length === 5 ? `${clock}:00` : clock;
+  return new Date(`${date}T${normalizedClock}+05:00`).toISOString();
 }
 
 export default function RawDataPage() {
@@ -49,23 +53,25 @@ export default function RawDataPage() {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => window.clearTimeout(timer);
   }, [search]);
-  const fromIso = pakistanDateToIso(from);
-  const toIso = pakistanDateToIso(to, true);
+  const fromIso = pakistanDateTimeToIso(from, "");
+  const toIso = pakistanDateTimeToIso(to, "", true);
   const validRange = !fromIso || !toIso || fromIso <= toIso;
-  const canExport = Boolean(fromIso && toIso && validRange);
+  const canExport = validRange;
   const punches = useRawPunches(debouncedSearch, page, fromIso, toIso);
   const totalPages = Math.max(
     1,
     Math.ceil((punches.data?.total ?? 0) / (punches.data?.pageSize ?? 100)),
   );
   const exportRawPunches = async () => {
-    if (!fromIso || !toIso || !canExport) return;
+    if (!canExport) return;
 
     setIsExporting(true);
     try {
       const result = await getRawPunchesExport(debouncedSearch, fromIso, toIso);
       await downloadRawPunchesXlsx(
-        `raw-punches-${from}-to-${to}.xlsx`,
+        from || to
+          ? `raw-punches-${from || "all"}-to-${to || "all"}.xlsx`
+          : "raw-punches-all.xlsx",
         result.data,
       );
     } finally {
@@ -79,31 +85,34 @@ export default function RawDataPage() {
       title="Raw Data"
     >
       <Panel>
-        <PanelHeader className="flex-col items-stretch gap-3 xl:flex-row xl:items-end">
-          <div>
+        <PanelHeader className="min-w-0 flex-col items-stretch gap-3 xl:flex-row xl:items-end">
+          {/* <div>
             <h2 className="text-sm font-semibold">Raw punches</h2>
             <p className="text-xs text-muted-foreground">
               Newest punches first. Search an employee to view their history.
             </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto_auto_auto_auto]">
-            <label className="relative self-end">
+          </div> */}
+          <div className="min-w-0 grid w-full gap-x-2 gap-y-3 sm:grid-cols-2 2xl:grid-cols-[minmax(260px,1.25fr)_minmax(180px,0.75fr)_minmax(180px,0.75fr)_auto]">
+            <label className="relative min-w-0 self-end sm:col-span-2 2xl:col-span-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input aria-label="Search punches by employee name or code" className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search employee name or code" value={search} />
+              <input aria-label="Search punches by employee name or code" className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search employee name or code" value={search} />
             </label>
-            <label className="text-xs text-muted-foreground">From date<input className="mt-1 block h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" onChange={(event) => { setFrom(event.target.value); setPage(1); }} type="date" value={from} /></label>
-            <label className="text-xs text-muted-foreground">To date<input className="mt-1 block h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" onChange={(event) => { setTo(event.target.value); setPage(1); }} type="date" value={to} /></label>
-            {canExport ? <Button className="self-end" disabled={isExporting} onClick={() => void exportRawPunches()} type="button"><Download className="size-4" />{isExporting ? "Exporting..." : "Export XLSX"}</Button> : null}
-            <Button className="self-end" disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); setPage(1); }} type="button">Clear</Button>
+            <label className="min-w-0 text-xs text-muted-foreground">From date<input className="mt-1 block h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground" onChange={(event) => { setFrom(event.target.value); setPage(1); }} type="date" value={from} /></label>
+            <label className="min-w-0 text-xs text-muted-foreground">To date<input className="mt-1 block h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground" onChange={(event) => { setTo(event.target.value); setPage(1); }} type="date" value={to} /></label>
+            <div className="flex min-w-0 flex-wrap items-end justify-start gap-2 sm:col-span-2 2xl:col-span-1">
+              <Button className="min-w-[122px] whitespace-nowrap" disabled={isExporting || !canExport} onClick={() => void exportRawPunches()} type="button"><Download className="size-4" />{isExporting ? "Exporting..." : "Export XLSX"}</Button>
+              <Button className="whitespace-nowrap" disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); setPage(1); }} type="button">Clear</Button>
+            </div>
           </div>
         </PanelHeader>
         {!validRange ? <p className="border-b border-border px-4 py-2 text-sm text-destructive">From date must be before To date.</p> : null}
         <PanelBody className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Punch time</th>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 font-medium">Time</th>
                   <th className="px-4 py-3 font-medium">Employee code</th>
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Status</th>
@@ -115,7 +124,10 @@ export default function RawDataPage() {
                 {(punches.data?.data ?? []).map((punch) => (
                   <tr className="hover:bg-muted/40" key={punch.id}>
                     <td className="px-4 py-3 font-medium tabular-nums">
-                      {formatPunchTime(punch.punchTime)}
+                      {formatPunchDate(punch.punchTime)}
+                    </td>
+                    <td className="px-4 py-3 font-medium tabular-nums">
+                      {formatPunchClock(punch.punchTime)}
                     </td>
                     <td className="px-4 py-3 font-medium">
                       {punch.employeeCode}

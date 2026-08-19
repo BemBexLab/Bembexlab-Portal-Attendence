@@ -3,7 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AttendanceModule } from './attendance/attendance.module';
-import { AuthModule } from './auth/auth.module';
 import { validateEnvironment } from './config';
 import { DatabaseModule } from './database/database.module';
 import { DevicesModule } from './devices/devices.module';
@@ -27,7 +26,6 @@ import { ShiftsModule } from './shifts/shifts.module';
     WebsocketModule,
     ShiftsModule,
     UsersModule,
-    AuthModule,
     DevicesModule,
     AttendanceModule,
     ReportsModule,

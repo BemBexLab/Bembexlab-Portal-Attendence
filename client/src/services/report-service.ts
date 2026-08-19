@@ -80,8 +80,8 @@ export function getRawPunches(
 
 export function getRawPunchesExport(
   search: string,
-  from: string,
-  to: string,
+  from?: string,
+  to?: string,
 ) {
   return getReport<{ data: RawPunch[]; total: number }>(
     "/reports/raw-punches/export",

@@ -239,29 +239,39 @@ export async function downloadRawPunchesXlsx(
     views: [{ state: "frozen", ySplit: 1 }],
   });
   const headers = [
-    "PUNCH TIME",
+    "DATE",
+    "TIME",
     "EMPLOYEE CODE",
     "EMPLOYEE",
     "STATUS",
     "DEVICE",
-    "VERIFICATION",
   ];
   sheet.addRow(headers);
 
   punches.forEach((punch) => {
+    const punchDate = new Date(punch.punchTime);
     sheet.addRow([
-      new Date(punch.punchTime).toLocaleString("en-US", {
+      punchDate.toLocaleDateString("en-US", {
         timeZone: "Asia/Karachi",
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+      }),
+      punchDate.toLocaleTimeString("en-US", {
+        timeZone: "Asia/Karachi",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
       }),
       punch.employeeCode,
       punch.employee,
       formatPunchStatus(punch.punchStatus),
       punch.device,
-      punch.verificationType,
     ]);
   });
 
-  [24, 18, 24, 18, 24, 18].forEach((width, index) => {
+  [16, 16, 18, 24, 18, 24].forEach((width, index) => {
     sheet.getColumn(index + 1).width = width;
   });
   sheet.autoFilter = { from: "A1", to: "F1" };

@@ -2,7 +2,7 @@ type EnvironmentConfig = Record<string, string | undefined>;
 
 import { extractRedisUrl } from './redis-connection';
 
-type RequiredEnvironmentKey = 'DATABASE_URL' | 'JWT_SECRET' | 'PORT';
+type RequiredEnvironmentKey = 'DATABASE_URL' | 'PORT';
 
 function readRequired(config: EnvironmentConfig, key: RequiredEnvironmentKey) {
   const value = config[key];
@@ -180,7 +180,6 @@ export function validateEnvironment(config: EnvironmentConfig) {
     ),
     ZKTECO_PROTOCOL: validateZktecoProtocol(config.ZKTECO_PROTOCOL),
     ...validateRedis(config),
-    JWT_SECRET: readRequired(config, 'JWT_SECRET'),
     PORT: readPort(config, 'PORT'),
   };
 }

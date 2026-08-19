@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { io } from "socket.io-client";
 
-import { useAuthStore } from "@/stores/auth-store";
 import { useRealtimeStore } from "@/stores/realtime-store";
 import type {
   AttendanceUpdatedPayload,
@@ -20,17 +19,10 @@ function getRealtimeUrl() {
 
 export function useAttendanceRealtime() {
   const queryClient = useQueryClient();
-  const user = useAuthStore((state) => state.user);
-  const clearAuth = useAuthStore((state) => state.clearAuth);
   const pushEvent = useRealtimeStore((state) => state.pushEvent);
   const setConnected = useRealtimeStore((state) => state.setConnected);
 
   useEffect(() => {
-    if (!user) {
-      setConnected(false);
-      return;
-    }
-
     const socket = io(getRealtimeUrl(), {
       withCredentials: true,
       transports: ["websocket", "polling"],
@@ -96,13 +88,9 @@ export function useAttendanceRealtime() {
       },
     );
 
-    socket.on("unauthorized", () => {
-      clearAuth();
-    });
-
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       socket.disconnect();
     };
-  }, [clearAuth, pushEvent, queryClient, setConnected, user]);
+  }, [pushEvent, queryClient, setConnected]);
 }
