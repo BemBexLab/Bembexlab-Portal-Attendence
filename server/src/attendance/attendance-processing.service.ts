@@ -330,12 +330,13 @@ export class AttendanceProcessingService {
 
     try {
       const deviceUsers = await this.zktecoService.getUsers(device);
+      const syncedDeviceUserIds = deviceUsers.map((user) => user.deviceUserId);
       const existingEmployees = await this.prisma.employee.findMany({
         where: {
           organizationId: device.organizationId,
-          deviceUserId: { in: deviceUsers.map((user) => user.deviceUserId) },
+          deviceUserId: { in: syncedDeviceUserIds },
         },
-        select: { id: true, deviceUserId: true, name: true },
+        select: { id: true, deviceUserId: true, name: true, isActive: true },
       });
       const existingEmployeeByDeviceUserId = new Map(
         existingEmployees.map((employee) => [employee.deviceUserId, employee]),
@@ -357,6 +358,19 @@ export class AttendanceProcessingService {
         });
       }
 
+      await this.prisma.employee.updateMany({
+        where: {
+          organizationId: device.organizationId,
+          deviceUserId: {
+            not: null,
+            ...(syncedDeviceUserIds.length > 0
+              ? { notIn: syncedDeviceUserIds }
+              : {}),
+          },
+        },
+        data: { isActive: false },
+      });
+
       await Promise.all(
         deviceUsers.flatMap((deviceUser) => {
           const existing = existingEmployeeByDeviceUserId.get(
@@ -364,12 +378,17 @@ export class AttendanceProcessingService {
           );
 
           return existing &&
-            deviceUser.name &&
-            existing.name !== deviceUser.name
+            ((deviceUser.name && existing.name !== deviceUser.name) ||
+              !existing.isActive)
             ? [
                 this.prisma.employee.update({
                   where: { id: existing.id },
-                  data: { name: deviceUser.name },
+                  data: {
+                    ...(deviceUser.name && existing.name !== deviceUser.name
+                      ? { name: deviceUser.name }
+                      : {}),
+                    isActive: true,
+                  },
                 }),
               ]
             : [];
@@ -382,7 +401,7 @@ export class AttendanceProcessingService {
       const punches = fetchedPunches.filter(
         (punch) => punch.punchTime >= punchCutoff,
       );
-      const deviceUserIds = Array.from(
+      const punchDeviceUserIds = Array.from(
         new Set(punches.map((punch) => punch.deviceUserId)),
       );
       const employees = await this.prisma.employee.findMany({
@@ -390,7 +409,7 @@ export class AttendanceProcessingService {
           organizationId: device.organizationId,
           isActive: true,
           deviceUserId: {
-            in: deviceUserIds,
+            in: punchDeviceUserIds,
           },
         },
         select: {

@@ -186,7 +186,6 @@ model DailyAttendance {
   graceDeadline     DateTime?    @map("grace_deadline") @db.Timestamptz(6)
 
   @@unique([employeeId, date])
-  @@index([employeeId, date])
   @@index([organizationId, date])
   @@index([organizationId, status, date])
   @@map("daily_attendance")

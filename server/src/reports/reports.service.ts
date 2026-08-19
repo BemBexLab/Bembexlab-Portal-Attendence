@@ -514,6 +514,9 @@ export class ReportsService {
     const attendance = employeeIds.length
       ? await this.prisma.dailyAttendance.findMany({
           where: {
+            ...(scope.organizationId
+              ? { organizationId: scope.organizationId }
+              : {}),
             employeeId: { in: employeeIds },
             date: {
               gte: new Date(Math.min(...punchTimes) - 86_400_000),

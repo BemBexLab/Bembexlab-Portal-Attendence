@@ -13,15 +13,12 @@ export class PrismaService
     const databaseUrl = new URL(configuredUrl);
     databaseUrl.searchParams.delete('connection_limit');
     databaseUrl.searchParams.delete('pgbouncer');
-    if (databaseUrl.hostname.endsWith('.pooler.supabase.com')) {
-      databaseUrl.port = '5432';
-    }
     const adapter = new PrismaPg({
       connectionString: databaseUrl.toString(),
-      // Leave enough headroom for authentication and lightweight CRUD while
-      // attendance synchronization or a payroll report is using connections.
-      max: 10,
-      min: 2,
+      // Keep the application pool small because Supabase pooler capacity is
+      // shared with background attendance synchronization and reports.
+      max: 5,
+      min: 1,
       connectionTimeoutMillis: 30_000,
       idleTimeoutMillis: 60_000,
       keepAlive: true,

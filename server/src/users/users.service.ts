@@ -16,6 +16,18 @@ export class UsersService {
         where: {
           email: email.toLowerCase().trim(),
         },
+        select: {
+          id: true,
+          organizationId: true,
+          employeeId: true,
+          name: true,
+          email: true,
+          passwordHash: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
     );
   }
@@ -25,6 +37,15 @@ export class UsersService {
       this.prisma.user.findUnique({
         where: {
           id,
+        },
+        select: {
+          id: true,
+          organizationId: true,
+          employeeId: true,
+          name: true,
+          email: true,
+          role: true,
+          isActive: true,
         },
       }),
     );
@@ -41,6 +62,8 @@ export class UsersService {
 
     const employees = await this.prisma.employee.findMany({
       where: {
+        isActive: true,
+        deviceUserId: { not: null },
         ...(user.role === UserRole.SUPER_ADMIN
           ? {}
           : { organizationId: user.organizationId as string }),
@@ -182,10 +205,20 @@ export class UsersService {
       } catch (error) {
         const message =
           error instanceof Error ? error.message.toLowerCase() : '';
+        const code =
+          typeof error === 'object' && error !== null && 'code' in error
+            ? String(error.code).toLowerCase()
+            : '';
         const transientConnectionError =
           message.includes('connection timeout') ||
           message.includes('connection terminated') ||
-          message.includes('connection reset');
+          message.includes('connection reset') ||
+          message.includes('statement timeout') ||
+          message.includes('p2039') ||
+          code === 'p1001' ||
+          code === 'p1008' ||
+          code === 'p1017' ||
+          code === 'p2039';
 
         if (!transientConnectionError || attempt >= delays.length) {
           throw error;
