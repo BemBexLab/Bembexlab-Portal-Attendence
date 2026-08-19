@@ -77,6 +77,14 @@ export class ReportsController {
     return this.reportsService.getRawPunches(user, query);
   }
 
+  @Get('raw-punches/export')
+  rawPunchesExport(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Query() query: AllRawPunchesQueryDto,
+  ) {
+    return this.reportsService.getRawPunchesExport(user, query);
+  }
+
   @Get('raw-punches/all')
   @Public()
   allRawPunches(@Query() query: AllRawPunchesQueryDto) {

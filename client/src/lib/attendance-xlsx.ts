@@ -1,4 +1,8 @@
-import type { AttendanceRow, AttendanceStatus } from "@/types/attendance";
+import type {
+  AttendanceRow,
+  AttendanceStatus,
+  RawPunch,
+} from "@/types/attendance";
 
 type MonthlyEmployee = {
   employeeCode: string;
@@ -30,6 +34,14 @@ function formatStatus(status: AttendanceStatus) {
     .split("_")
     .map((word) => word[0].toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function formatPunchStatus(status: RawPunch["punchStatus"]) {
+  return status === "CHECK_IN"
+    ? "Check-in"
+    : status === "CHECK_OUT"
+      ? "Check-out"
+      : "Additional punch";
 }
 
 function triggerDownload(data: Uint8Array, filename: string) {
@@ -197,6 +209,62 @@ export async function downloadDailyAttendanceXlsx(
     sheet.getColumn(index + 1).width = width;
   });
   sheet.autoFilter = { from: "A1", to: "G1" };
+  sheet.eachRow((row, rowNumber) => {
+    row.height = 24;
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.border = border;
+      cell.alignment = { vertical: "middle", wrapText: true };
+      if (rowNumber === 1) {
+        cell.font = { bold: true };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF3F4F6" },
+        };
+      }
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  triggerDownload(new Uint8Array(buffer), filename);
+}
+
+export async function downloadRawPunchesXlsx(
+  filename: string,
+  punches: RawPunch[],
+) {
+  const ExcelJS = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Raw punches", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  const headers = [
+    "PUNCH TIME",
+    "EMPLOYEE CODE",
+    "EMPLOYEE",
+    "STATUS",
+    "DEVICE",
+    "VERIFICATION",
+  ];
+  sheet.addRow(headers);
+
+  punches.forEach((punch) => {
+    sheet.addRow([
+      new Date(punch.punchTime).toLocaleString("en-US", {
+        timeZone: "Asia/Karachi",
+      }),
+      punch.employeeCode,
+      punch.employee,
+      formatPunchStatus(punch.punchStatus),
+      punch.device,
+      punch.verificationType,
+    ]);
+  });
+
+  [24, 18, 24, 18, 24, 18].forEach((width, index) => {
+    sheet.getColumn(index + 1).width = width;
+  });
+  sheet.autoFilter = { from: "A1", to: "F1" };
   sheet.eachRow((row, rowNumber) => {
     row.height = 24;
     row.eachCell({ includeEmpty: true }, (cell) => {

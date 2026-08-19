@@ -86,7 +86,7 @@ export class UsersService {
 
     return employees.map((employee) => ({
       id: employee.id,
-      employeeCode: employee.employeeCode,
+      employeeCode: employee.deviceUserId ?? employee.employeeCode,
       name: employee.name,
       department: employee.department?.name ?? null,
       deviceUserId: employee.deviceUserId,
@@ -138,6 +138,7 @@ export class UsersService {
       select: {
         id: true,
         employeeCode: true,
+        deviceUserId: true,
         name: true,
         isActive: true,
       },
@@ -171,6 +172,7 @@ export class UsersService {
       select: {
         id: true,
         employeeCode: true,
+        deviceUserId: true,
         name: true,
         monthlySalary: true,
       },
@@ -178,6 +180,7 @@ export class UsersService {
 
     return {
       ...updated,
+      employeeCode: updated.deviceUserId ?? updated.employeeCode,
       monthlySalary: updated.monthlySalary.toString(),
     };
   }

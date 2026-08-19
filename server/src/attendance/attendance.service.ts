@@ -45,7 +45,8 @@ export class AttendanceService {
     return records.map((record) => ({
       id: record.id,
       employeeId: record.employeeId,
-      employeeCode: record.employee.employeeCode,
+      employeeCode:
+        record.employee.deviceUserId ?? record.employee.employeeCode,
       employee: record.employee.name,
       department: record.employee.department?.name ?? 'Unassigned',
       date: record.date.toISOString().slice(0, 10),

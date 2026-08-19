@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { useRawPunches } from "@/hooks/use-reports";
+import { getRawPunchesExport } from "@/services/report-service";
+import { downloadRawPunchesXlsx } from "@/lib/attendance-xlsx";
 
 function formatPunchTime(value: string) {
   return new Date(value).toLocaleString([], {
@@ -42,6 +44,7 @@ export default function RawDataPage() {
   const [page, setPage] = useState(1);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => window.clearTimeout(timer);
@@ -49,11 +52,26 @@ export default function RawDataPage() {
   const fromIso = pakistanDateToIso(from);
   const toIso = pakistanDateToIso(to, true);
   const validRange = !fromIso || !toIso || fromIso <= toIso;
+  const canExport = Boolean(fromIso && toIso && validRange);
   const punches = useRawPunches(debouncedSearch, page, fromIso, toIso);
   const totalPages = Math.max(
     1,
     Math.ceil((punches.data?.total ?? 0) / (punches.data?.pageSize ?? 100)),
   );
+  const exportRawPunches = async () => {
+    if (!fromIso || !toIso || !canExport) return;
+
+    setIsExporting(true);
+    try {
+      const result = await getRawPunchesExport(debouncedSearch, fromIso, toIso);
+      await downloadRawPunchesXlsx(
+        `raw-punches-${from}-to-${to}.xlsx`,
+        result.data,
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <AppShell
@@ -68,13 +86,14 @@ export default function RawDataPage() {
               Newest punches first. Search an employee to view their history.
             </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto_auto_auto]">
+          <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto_auto_auto_auto]">
             <label className="relative self-end">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input aria-label="Search punches by employee name or code" className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/20" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search employee name or code" value={search} />
             </label>
             <label className="text-xs text-muted-foreground">From date<input className="mt-1 block h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" onChange={(event) => { setFrom(event.target.value); setPage(1); }} type="date" value={from} /></label>
             <label className="text-xs text-muted-foreground">To date<input className="mt-1 block h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" onChange={(event) => { setTo(event.target.value); setPage(1); }} type="date" value={to} /></label>
+            {canExport ? <Button className="self-end" disabled={isExporting} onClick={() => void exportRawPunches()} type="button"><Download className="size-4" />{isExporting ? "Exporting..." : "Export XLSX"}</Button> : null}
             <Button className="self-end" disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); setPage(1); }} type="button">Clear</Button>
           </div>
         </PanelHeader>

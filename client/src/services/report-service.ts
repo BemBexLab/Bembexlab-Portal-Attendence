@@ -77,3 +77,18 @@ export function getRawPunches(
     pageSize,
   });
 }
+
+export function getRawPunchesExport(
+  search: string,
+  from: string,
+  to: string,
+) {
+  return getReport<{ data: RawPunch[]; total: number }>(
+    "/reports/raw-punches/export",
+    {
+      search: search || undefined,
+      from,
+      to,
+    },
+  );
+}

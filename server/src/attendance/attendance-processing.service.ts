@@ -144,6 +144,7 @@ export class AttendanceProcessingService {
     );
     const eligibleStatuses = new Set<AttendanceStatus>([
       AttendanceStatus.PRESENT,
+      AttendanceStatus.LATE,
       AttendanceStatus.HALF_DAY,
       AttendanceStatus.MISSING_CHECKOUT,
     ]);
@@ -336,7 +337,13 @@ export class AttendanceProcessingService {
           organizationId: device.organizationId,
           deviceUserId: { in: syncedDeviceUserIds },
         },
-        select: { id: true, deviceUserId: true, name: true, isActive: true },
+        select: {
+          id: true,
+          deviceUserId: true,
+          employeeCode: true,
+          name: true,
+          isActive: true,
+        },
       });
       const existingEmployeeByDeviceUserId = new Map(
         existingEmployees.map((employee) => [employee.deviceUserId, employee]),
@@ -349,7 +356,7 @@ export class AttendanceProcessingService {
         await this.prisma.employee.createMany({
           data: missingUsers.map((deviceUser) => ({
             organizationId: device.organizationId,
-            employeeCode: `ZKT-${deviceUser.deviceUserId}`,
+            employeeCode: deviceUser.deviceUserId,
             deviceUserId: deviceUser.deviceUserId,
             name: deviceUser.name ?? `K40 User ${deviceUser.deviceUserId}`,
             isActive: true,
@@ -379,13 +386,18 @@ export class AttendanceProcessingService {
 
           return existing &&
             ((deviceUser.name && existing.name !== deviceUser.name) ||
-              !existing.isActive)
+              !existing.isActive ||
+              existing.employeeCode === `ZKT-${deviceUser.deviceUserId}`)
             ? [
                 this.prisma.employee.update({
                   where: { id: existing.id },
                   data: {
                     ...(deviceUser.name && existing.name !== deviceUser.name
                       ? { name: deviceUser.name }
+                      : {}),
+                    ...(existing.employeeCode ===
+                    `ZKT-${deviceUser.deviceUserId}`
+                      ? { employeeCode: deviceUser.deviceUserId }
                       : {}),
                     isActive: true,
                   },
@@ -432,6 +444,9 @@ export class AttendanceProcessingService {
         orderBy: { punchTime: 'desc' },
         select: { punchTime: true },
       });
+      const recentRecalculationCutoff = new Date(
+        databaseNow.getTime() - 2 * 86_400_000,
+      );
       const affectedDays = new Map<string, AffectedAttendanceDay>();
       const rawLogs = punches.flatMap((punch) => {
         const employee = employeeByDeviceUserId.get(punch.deviceUserId);
@@ -445,7 +460,11 @@ export class AttendanceProcessingService {
         }
         const employeeId = employee.id;
 
-        if (!latestStoredLog || punch.punchTime >= latestStoredLog.punchTime) {
+        if (
+          !latestStoredLog ||
+          punch.punchTime >= latestStoredLog.punchTime ||
+          punch.punchTime >= recentRecalculationCutoff
+        ) {
           const dateKey = this.resolveShiftDateKey(
             punch.punchTime,
             timezone,
@@ -482,9 +501,6 @@ export class AttendanceProcessingService {
         createdLogCount += result.count;
       }
       const createResult = { count: createdLogCount };
-      if (createResult.count === 0) {
-        affectedDays.clear();
-      }
       let dailyCalculated = 0;
       const dailyAttendance: AttendanceUpdatedPayload['dailyAttendance'] = [];
 
@@ -644,7 +660,7 @@ export class AttendanceProcessingService {
       firstCheckIn !== null && firstCheckIn > graceDeadline;
     const status = firstCheckIn
       ? arrivedAfterDeadline
-        ? AttendanceStatus.HALF_DAY
+        ? AttendanceStatus.LATE
         : lastCheckOut
           ? AttendanceStatus.PRESENT
           : AttendanceStatus.MISSING_CHECKOUT

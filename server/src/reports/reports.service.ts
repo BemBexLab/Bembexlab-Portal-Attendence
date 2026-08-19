@@ -31,6 +31,13 @@ const PRESENT_STATUSES = new Set<AttendanceStatus>([
   AttendanceStatus.REMOTE,
 ]);
 
+function displayEmployeeCode(employee: {
+  employeeCode: string;
+  deviceUserId: string | null;
+}) {
+  return employee.deviceUserId ?? employee.employeeCode;
+}
+
 type ReportScope = {
   organizationId?: string;
   employeeId?: string;
@@ -90,7 +97,7 @@ export class ReportsService {
 
       return {
         employeeId: employee.id,
-        employeeCode: employee.employeeCode,
+        employeeCode: displayEmployeeCode(employee),
         employee: employee.name,
         department: employee.department?.name ?? 'Unassigned',
         organization: employee.organization.name,
@@ -154,7 +161,7 @@ export class ReportsService {
       const status = record.statusOverride ?? record.status;
       const current = rowsByEmployee.get(record.employeeId) ?? {
         employeeId: record.employeeId,
-        employeeCode: record.employee.employeeCode,
+        employeeCode: displayEmployeeCode(record.employee),
         employee: record.employee.name,
         department: record.employee.department?.name ?? 'Unassigned',
         organization: record.organization.name,
@@ -309,7 +316,7 @@ export class ReportsService {
 
       return {
         employeeId: employee.id,
-        employeeCode: employee.employeeCode,
+        employeeCode: displayEmployeeCode(employee),
         employee: employee.name,
         department: employee.department?.name ?? 'Unassigned',
         monthlySalary: this.roundMoney(monthlySalary),
@@ -400,7 +407,7 @@ export class ReportsService {
         rows.push({
           date: dateKey,
           employeeId: employee.id,
-          employeeCode: employee.employeeCode,
+          employeeCode: displayEmployeeCode(employee),
           employee: employee.name,
           department: employee.department?.name ?? 'Unassigned',
           organization: employee.organization.name,
@@ -422,6 +429,11 @@ export class ReportsService {
 
   async getRawPunches(user: CurrentUser, query: RawPunchesQueryDto) {
     return this.queryRawPunches(user, query, false);
+  }
+
+  async getRawPunchesExport(user: CurrentUser, query: AllRawPunchesQueryDto) {
+    const result = await this.queryRawPunches(user, query, true);
+    return { data: result.data, total: result.total };
   }
 
   async getAllRawPunches(query: AllRawPunchesQueryDto) {
@@ -495,6 +507,7 @@ export class ReportsService {
         employee: {
           select: {
             employeeCode: true,
+            deviceUserId: true,
             name: true,
             department: { select: { name: true } },
           },
@@ -546,7 +559,8 @@ export class ReportsService {
         const punchKey = `${record.employeeId}:${record.punchTime.getTime()}`;
         return {
           id: record.id,
-          employeeCode: record.employee.employeeCode,
+          employeeCode:
+            record.employee.deviceUserId ?? record.employee.employeeCode,
           employee: record.employee.name,
           department: record.employee.department?.name ?? 'Unassigned',
           device: record.device.name,
@@ -610,7 +624,7 @@ export class ReportsService {
     return {
       employee: {
         id: employee.id,
-        employeeCode: employee.employeeCode,
+        employeeCode: displayEmployeeCode(employee),
         name: employee.name,
         department: employee.department?.name ?? 'Unassigned',
         organization: employee.organization.name,
@@ -640,7 +654,7 @@ export class ReportsService {
 
         return {
           employeeId: record.employeeId,
-          employeeCode: record.employee.employeeCode,
+          employeeCode: displayEmployeeCode(record.employee),
           employee: record.employee.name,
           department: record.employee.department?.name ?? 'Unassigned',
           organization: record.organization.name,
@@ -681,7 +695,7 @@ export class ReportsService {
       .filter((record) => record.workingMinutes > minimumMinutes)
       .map((record) => ({
         employeeId: record.employeeId,
-        employeeCode: record.employee.employeeCode,
+        employeeCode: displayEmployeeCode(record.employee),
         employee: record.employee.name,
         department: record.employee.department?.name ?? 'Unassigned',
         organization: record.organization.name,
@@ -972,16 +986,8 @@ export class ReportsService {
         });
     const timezone = organization?.timezone || 'Asia/Karachi';
     const now = await this.prisma.databaseNow();
-    const time = getTimePartsInTimeZone(now, timezone);
     const dateKey = getDateKeyInTimeZone(now, timezone);
-
-    if (time.hour * 60 + time.minute >= 21 * 60) {
-      return dateKey;
-    }
-
-    const previousDate = this.toDatabaseDate(dateKey);
-    previousDate.setUTCDate(previousDate.getUTCDate() - 1);
-    return this.toDateKey(previousDate);
+    return dateKey;
   }
 
   private summarizeDailyRows(
