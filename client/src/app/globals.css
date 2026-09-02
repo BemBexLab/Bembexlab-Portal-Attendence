@@ -3,6 +3,8 @@
 
 :root {
   --radius: 0.5rem;
+  --app-header-height: 7.125rem;
+  --panel-header-height: 4rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -119,5 +121,29 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  thead {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--card);
+  }
+
+  thead > tr {
+    background: var(--card);
+  }
+
+  /* Keep table rows in a local scroll area so the table header can stay at
+     the top of that area while the panel header remains sticky above it. */
+  [data-panel-body] > div:has(> table) {
+    max-height: calc(100vh - var(--app-header-height) - var(--panel-header-height) - 2rem);
+    overflow: auto;
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --app-header-height: 3.5rem;
   }
 }

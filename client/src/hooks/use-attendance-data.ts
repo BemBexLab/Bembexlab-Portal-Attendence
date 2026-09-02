@@ -11,6 +11,10 @@ import {
   getAnalytics,
   getDashboardSummary,
   getDevices,
+  createDevice,
+  updateDevice,
+  deleteDevice,
+  getDirectDeviceAttendance,
   getEmployees,
   syncDeviceAttendance,
   testDevice,
@@ -130,6 +134,20 @@ export function useEmployees() {
 
 export function useShifts() {
   return useQuery({ queryKey: attendanceKeys.shifts, queryFn: getShifts });
+}
+
+export function useDirectDeviceAttendance(
+  deviceId: string,
+  search?: string,
+  from?: string,
+  to?: string,
+) {
+  return useQuery({
+    queryKey: ["devices", deviceId, "historical-attendance", search, from, to],
+    queryFn: () => getDirectDeviceAttendance(deviceId, { search, from, to }),
+    enabled: true,
+    staleTime: 0,
+  });
 }
 
 export function useCreateShift() {
@@ -258,6 +276,48 @@ export function useDevices() {
   return useQuery({
     queryKey: attendanceKeys.devices,
     queryFn: getDevices,
+  });
+}
+
+export function useCreateDevice() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: createDevice,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
+      ]);
+    },
+  });
+}
+
+export function useUpdateDevice() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateDevice,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
+      ]);
+    },
+  });
+}
+
+export function useDeleteDevice() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteDevice,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
+      ]);
+    },
   });
 }
 

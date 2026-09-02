@@ -93,7 +93,7 @@ export default function DashboardPage() {
         <div className="grid items-start gap-4 xl:grid-cols-12">
           <AttendanceTrendChart className="xl:col-span-7 xl:row-span-2" />
           <DepartmentChart className="xl:col-span-5" />
-          <Panel className="min-w-0 overflow-hidden xl:col-span-5">
+          <Panel className="min-w-0 xl:col-span-5">
             <PanelHeader>
               <div>
                 <h2 className="text-sm font-semibold">Device health</h2>

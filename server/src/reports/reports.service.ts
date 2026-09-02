@@ -92,8 +92,9 @@ export class ReportsService {
     );
     const rows = employees.map((employee) => {
       const record = recordsByEmployee.get(employee.id);
-      const status =
-        record?.statusOverride ?? record?.status ?? AttendanceStatus.ABSENT;
+      const status = record
+        ? this.getEffectiveAttendanceStatus(record)
+        : AttendanceStatus.ABSENT;
 
       return {
         employeeId: employee.id,
@@ -158,7 +159,7 @@ export class ReportsService {
     >();
 
     for (const record of records) {
-      const status = record.statusOverride ?? record.status;
+      const status = this.getEffectiveAttendanceStatus(record);
       const current = rowsByEmployee.get(record.employeeId) ?? {
         employeeId: record.employeeId,
         employeeCode: displayEmployeeCode(record.employee),
@@ -512,6 +513,7 @@ export class ReportsService {
             department: { select: { name: true } },
           },
         },
+        deviceNameSnapshot: true,
         device: { select: { name: true } },
       },
       orderBy: { punchTime: 'desc' },
@@ -563,7 +565,7 @@ export class ReportsService {
             record.employee.deviceUserId ?? record.employee.employeeCode,
           employee: record.employee.name,
           department: record.employee.department?.name ?? 'Unassigned',
-          device: record.device.name,
+          device: record.device?.name ?? record.deviceNameSnapshot ?? 'Removed device',
           punchTime: record.punchTime.toISOString(),
           punchStatus: checkIns.has(punchKey)
             ? 'CHECK_IN'
@@ -662,7 +664,7 @@ export class ReportsService {
           arrival,
           threshold,
           minutesLate: this.diffTimesInMinutes(threshold, arrival),
-          status: record.statusOverride ?? record.status,
+          status: this.getEffectiveAttendanceStatus(record),
         };
       })
       .filter((row) => row.minutesLate > 0)
@@ -702,7 +704,7 @@ export class ReportsService {
         date: this.toDateKey(record.date),
         workingMinutes: record.workingMinutes,
         overtimeMinutes: record.workingMinutes - minimumMinutes,
-        status: record.statusOverride ?? record.status,
+          status: this.getEffectiveAttendanceStatus(record),
       }))
       .sort((left, right) => right.overtimeMinutes - left.overtimeMinutes);
 
@@ -824,7 +826,7 @@ export class ReportsService {
         rows: 0,
       };
 
-      const status = record.statusOverride ?? record.status;
+      const status = this.getEffectiveAttendanceStatus(record);
       this.applyAnalyticsRecord(trend, status, record.workingMinutes);
       this.applyAnalyticsRecord(department, status, record.workingMinutes);
       trends.set(dateKey, trend);
@@ -1012,6 +1014,35 @@ export class ReportsService {
         0,
       ),
     };
+  }
+
+  private getEffectiveAttendanceStatus(record: {
+    status: AttendanceStatus;
+    statusOverride: AttendanceStatus | null;
+    firstCheckIn: Date | null;
+    lastCheckOut: Date | null;
+    graceDeadline: Date | null;
+  }) {
+    if (record.statusOverride || record.status !== AttendanceStatus.LATE) {
+      return record.statusOverride ?? record.status;
+    }
+
+    // Daily rows may have been calculated before the inclusive grace-minute
+    // rule was introduced. Correct those persisted rows at read time too.
+    const graceMinuteEnd = record.graceDeadline
+      ? new Date(record.graceDeadline.getTime() + 60_000 - 1)
+      : null;
+    if (
+      record.firstCheckIn &&
+      graceMinuteEnd &&
+      record.firstCheckIn <= graceMinuteEnd
+    ) {
+      return record.lastCheckOut
+        ? AttendanceStatus.PRESENT
+        : AttendanceStatus.MISSING_CHECKOUT;
+    }
+
+    return record.status;
   }
 
   private async normalizeRange(from?: string, to?: string) {

@@ -3,6 +3,10 @@ import { User, UserRole } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type { CurrentUser } from '../auth/types/current-user.type';
+import {
+  dateKeyToDatabaseDate,
+  getDateKeyInTimeZone,
+} from '../attendance/utils/timezone';
 
 export type SafeUser = Omit<User, 'passwordHash'>;
 
@@ -60,6 +64,15 @@ export class UsersService {
       throw new ForbiddenException('User is not linked to an employee profile');
     }
 
+    const organizationIds = user.role === UserRole.SUPER_ADMIN
+      ? (await this.prisma.organization.findMany({ select: { id: true } })).map(
+          (organization) => organization.id,
+        )
+      : [user.organizationId as string];
+    for (const organizationId of organizationIds) {
+      await this.ensureDefaultShiftAssignments(organizationId);
+    }
+
     const employees = await this.prisma.employee.findMany({
       where: {
         isActive: true,
@@ -104,6 +117,58 @@ export class UsersService {
           }
         : null,
     }));
+  }
+
+  private async ensureDefaultShiftAssignments(organizationId: string) {
+    // Reuse an existing 21:00–06:00 shift when available; otherwise create a
+    // clearly labelled default shift for this organization.
+    let shift = await this.prisma.shift.findFirst({
+      where: { organizationId, startMinutes: 21 * 60, endMinutes: 6 * 60 },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!shift) {
+      try {
+        shift = await this.prisma.shift.create({
+          data: {
+            organizationId,
+            name: 'Default Night Shift',
+            startMinutes: 21 * 60,
+            endMinutes: 6 * 60,
+          },
+        });
+      } catch (error) {
+        if (!this.isUniqueConstraintError(error)) throw error;
+        shift = await this.prisma.shift.findUniqueOrThrow({
+          where: { organizationId_name: { organizationId, name: 'Default Night Shift' } },
+        });
+      }
+    }
+
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { timezone: true },
+    });
+    const effectiveFrom = dateKeyToDatabaseDate(
+      getDateKeyInTimeZone(new Date(), organization?.timezone || 'Asia/Karachi'),
+    );
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        organizationId,
+        isActive: true,
+        deviceUserId: { not: null },
+        shiftAssignments: { none: {} },
+      },
+      select: { id: true },
+    });
+    if (employees.length) {
+      await this.prisma.employeeShiftAssignment.createMany({
+        data: employees.map((employee) => ({
+          employeeId: employee.id,
+          shiftId: shift.id,
+          effectiveFrom,
+        })),
+      });
+    }
   }
 
   async updateEmployeeStatus(
@@ -230,5 +295,14 @@ export class UsersService {
         await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
       }
     }
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'P2002'
+    );
   }
 }

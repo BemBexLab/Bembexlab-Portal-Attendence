@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock4, Pencil, Search, Trash2 } from "lucide-react";
+import axios from "axios";
 import { useState } from "react";
 import Swal from "sweetalert2";
 import { AppShell } from "@/components/layout/app-shell";
@@ -12,6 +13,15 @@ import { TimeInput } from "@/components/ui/time-input";
 import { useAssignEmployeeShift, useCreateShift, useDeleteShift, useEmployees, useShifts, useUpdateShift } from "@/hooks/use-attendance-data";
 
 function toMinutes(value: string) { const [hours, minutes] = value.split(":").map(Number); return hours * 60 + minutes; }
+function apiErrorMessage(error: unknown, fallback: string) {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.message;
+    if (Array.isArray(message)) return message.join(" ");
+    if (typeof message === "string" && message.trim()) return message;
+    if (error.message) return error.message;
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 function escapeHtml(value: string) { return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] ?? character); }
 function toTime(minutes: number) {
   const normalized = ((minutes % 1440) + 1440) % 1440;
@@ -99,8 +109,8 @@ export default function ShiftsPage() {
       await createShift.mutateAsync({ name, startMinutes: toMinutes(start), endMinutes: toMinutes(end) });
       setName("");
       await Swal.fire({ title: "Shift created", icon: "success", timer: 1400, showConfirmButton: false });
-    } catch {
-      await Swal.fire({ title: "Could not create shift", text: "The shift name may already be in use.", icon: "error" });
+    } catch (error) {
+      await Swal.fire({ title: "Could not create shift", text: apiErrorMessage(error, "Please try again."), icon: "error" });
     }
   };
   const toggleShift = async (shift: NonNullable<typeof shifts.data>[number]) => {
@@ -220,8 +230,8 @@ export default function ShiftsPage() {
         endMinutes: toMinutes(result.value.end),
       });
       await Swal.fire({ title: "Shift updated", icon: "success", timer: 1400, showConfirmButton: false });
-    } catch {
-      await Swal.fire({ title: "Could not update shift", text: "The name may already be in use.", icon: "error" });
+    } catch (error) {
+      await Swal.fire({ title: "Could not update shift", text: apiErrorMessage(error, "Please try again."), icon: "error" });
     }
   };
 

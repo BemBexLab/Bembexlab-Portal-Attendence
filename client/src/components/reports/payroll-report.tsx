@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarDays, Download, Search, WalletCards, X } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
@@ -23,15 +23,23 @@ export function PayrollReportPanel() {
   const [selectedEmployee, setSelectedEmployee] = useState<PayrollRow | null>(null);
   const payroll = usePayrollReport(month || undefined);
   const report = payroll.data;
-  const filteredRows = (report?.rows ?? []).filter((row) => {
+  const filteredRows = useMemo(() => {
     const query = search.toLowerCase().trim();
-    return (
-      !query ||
-      row.employee.toLowerCase().includes(query) ||
-      row.employeeCode.toLowerCase().includes(query) ||
-      row.department.toLowerCase().includes(query)
-    );
-  });
+    return (report?.rows ?? [])
+      .filter(
+        (row) =>
+          !query ||
+          row.employee.toLowerCase().includes(query) ||
+          row.employeeCode.toLowerCase().includes(query) ||
+          row.department.toLowerCase().includes(query),
+      )
+      .sort(
+        (left, right) =>
+          left.employee.localeCompare(right.employee, undefined, {
+            sensitivity: "base",
+          }) || left.employeeCode.localeCompare(right.employeeCode),
+      );
+  }, [report?.rows, search]);
 
   const exportPayroll = async () => {
     if (!report?.rows.length) {
@@ -43,7 +51,7 @@ export function PayrollReportPanel() {
 
   return (
     <>
-    <Panel className="overflow-hidden">
+    <Panel>
       <PanelHeader className="flex-col items-stretch lg:flex-row lg:items-center">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">

@@ -7,6 +7,7 @@ import type {
   DepartmentAttendance,
   Device,
   DeviceInfoResponse,
+  DirectDeviceAttendanceResponse,
   DeviceSyncResult,
   Employee,
   ReportAnalytics,
@@ -138,6 +139,37 @@ export async function getDevices() {
   return response.data;
 }
 
+export async function createDevice(input: {
+  name: string;
+  ip: string;
+  port: number;
+  status?: Device["status"];
+}) {
+  const response = await api.post<Device>("/devices", input);
+  return response.data;
+}
+
+export async function updateDevice(input: {
+  id: string;
+  name?: string;
+  ip?: string;
+  port?: number;
+  status?: Device["status"];
+}) {
+  const { id, ...data } = input;
+  const response = await api.patch<Device>(`/devices/${id}`, data);
+  return response.data;
+}
+
+export async function deleteDevice(id: string) {
+  const response = await api.delete<{
+    removed: boolean;
+    deactivated: boolean;
+    preservedLogs: number;
+  }>(`/devices/${id}`);
+  return response.data;
+}
+
 export async function getDepartmentAttendance() {
   const analytics = await getAnalytics();
   return analytics.departments.map<DepartmentAttendance>((department) => ({
@@ -192,6 +224,19 @@ export async function fetchDeviceInfo(deviceId: string) {
 export async function syncDeviceAttendance(deviceId: string) {
   const response = await api.post<DeviceSyncResult>(
     `/devices/${deviceId}/sync-attendance`,
+  );
+  return response.data;
+}
+
+export async function getDirectDeviceAttendance(
+  deviceId: string,
+  params?: { search?: string; from?: string; to?: string },
+) {
+  const response = await api.get<DirectDeviceAttendanceResponse>(
+    deviceId
+      ? `/devices/${deviceId}/historical-attendance`
+      : "/devices/historical-attendance",
+    { params },
   );
   return response.data;
 }

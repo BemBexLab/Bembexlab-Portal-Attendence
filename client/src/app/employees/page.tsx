@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, Search } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 
@@ -71,14 +71,22 @@ export default function EmployeesPage() {
     string | null
   >(null);
   const [search, setSearch] = useState("");
-  const filteredEmployees = (employees.data ?? []).filter((employee) => {
+  const filteredEmployees = useMemo(() => {
     const query = search.toLowerCase().trim();
-    return (
-      !query ||
-      employee.name.toLowerCase().includes(query) ||
-      employee.employeeCode.toLowerCase().includes(query)
-    );
-  });
+    return (employees.data ?? [])
+      .filter(
+        (employee) =>
+          !query ||
+          employee.name.toLowerCase().includes(query) ||
+          employee.employeeCode.toLowerCase().includes(query),
+      )
+      .sort(
+        (left, right) =>
+          left.name.localeCompare(right.name, undefined, {
+            sensitivity: "base",
+          }) || left.employeeCode.localeCompare(right.employeeCode),
+      );
+  }, [employees.data, search]);
   const showEmployeeInfo = async (
     employee: NonNullable<typeof employees.data>[number],
   ) => {
@@ -288,24 +296,28 @@ export default function EmployeesPage() {
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Code</th>
+                  <th className="w-16 px-4 py-3 font-medium">S.No</th>
+                  {/* <th className="px-4 py-3 font-medium">Code</th> */}
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Shift</th>
-                  <th className="px-4 py-3 font-medium">Device User ID</th>
+                  <th className="px-4 py-3 font-medium">Employee ID</th>
                   <th className="px-4 py-3 font-medium">Monthly Salary</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredEmployees.map((employee) => (
+                {filteredEmployees.map((employee, index) => (
                   <tr
                     className="cursor-pointer hover:bg-muted/40"
                     key={employee.id}
                     onClick={() => void showEmployeeInfo(employee)}
                   >
-                    <td className="px-4 py-3 font-medium">
-                      {employee.employeeCode}
+                    <td className="px-4 py-3 font-medium tabular-nums">
+                      {index + 1}
                     </td>
+                    {/* <td className="px-4 py-3 font-medium">
+                      {employee.employeeCode}
+                    </td> */}
                     <td className="px-4 py-3">{employee.name}</td>
                     <td
                       className="px-4 py-3"
@@ -452,7 +464,7 @@ export default function EmployeesPage() {
                   <tr>
                     <td
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
-                      colSpan={6}
+                      colSpan={7}
                     >
                       No employees match “{search}”.
                     </td>

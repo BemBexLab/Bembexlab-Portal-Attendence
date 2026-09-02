@@ -18,7 +18,7 @@ export function AttendanceTrendChart({ className }: { className?: string }) {
   const trend = useAttendanceTrend();
 
   return (
-    <Panel className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
+    <Panel className={cn("flex h-full min-w-0 flex-col", className)}>
       <PanelHeader>
         <div>
           <h2 className="text-sm font-semibold">Weekly trend</h2>

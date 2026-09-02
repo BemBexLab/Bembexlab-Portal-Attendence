@@ -58,6 +58,14 @@ export default function RawDataPage() {
   const validRange = !fromIso || !toIso || fromIso <= toIso;
   const canExport = validRange;
   const punches = useRawPunches(debouncedSearch, page, fromIso, toIso);
+  const { refetch } = punches;
+  useEffect(() => {
+    const refreshTimer = window.setInterval(() => {
+      void refetch();
+    }, 10_000);
+
+    return () => window.clearInterval(refreshTimer);
+  }, [refetch]);
   const totalPages = Math.max(
     1,
     Math.ceil((punches.data?.total ?? 0) / (punches.data?.pageSize ?? 100)),
@@ -152,9 +160,7 @@ export default function RawDataPage() {
 
           <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
             <p className="text-xs text-muted-foreground">
-              {punches.isLoading
-                ? "Loading punches..."
-                : `${(punches.data?.total ?? 0).toLocaleString()} punches · Page ${page} of ${totalPages}`}
+              {`${(punches.data?.total ?? 0).toLocaleString()} punches · Page ${page} of ${totalPages}`}
             </p>
             <div className="flex gap-2">
               <Button

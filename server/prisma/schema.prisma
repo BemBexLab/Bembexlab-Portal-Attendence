@@ -144,14 +144,15 @@ model AttendanceLog {
   id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId   String           @map("organization_id") @db.Uuid
   employeeId       String           @map("employee_id") @db.Uuid
-  deviceId         String           @map("device_id") @db.Uuid
+  deviceId         String?          @map("device_id") @db.Uuid
+  deviceNameSnapshot String?        @map("device_name_snapshot") @db.VarChar(120)
   punchTime        DateTime         @map("punch_time") @db.Timestamptz(6)
   verificationType VerificationType @default(UNKNOWN) @map("verification_type")
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  device       ZktecoDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  device       ZktecoDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@unique([employeeId, deviceId, punchTime, verificationType], map: "attendance_logs_employee_device_punch_verification_key")
   @@index([punchTime])

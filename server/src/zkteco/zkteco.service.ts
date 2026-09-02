@@ -10,6 +10,7 @@ import ZKLib from 'node-zklib';
 import {
   NormalizedAttendancePunch,
   NormalizedZktecoUser,
+  DirectZktecoAttendancePunch,
   ZktecoConnectionTarget,
   ZktecoDeviceInfo,
   ZktecoRawAttendanceRecord,
@@ -82,6 +83,35 @@ export class ZKTecoService {
         .filter((record): record is NormalizedAttendancePunch =>
           Boolean(record),
         );
+    });
+  }
+
+  async getHistoricalAttendance(
+    target: ZktecoConnectionTarget,
+  ): Promise<DirectZktecoAttendancePunch[]> {
+    return this.withConnection(target, async (client) => {
+      // Keep commands sequential on the device socket; some K40 firmware
+      // drops one of two concurrent protocol requests.
+      const attendanceResponse = await client.getAttendances();
+      const usersResponse = await client.getUsers();
+
+      if (attendanceResponse.err) throw attendanceResponse.err;
+      if (usersResponse.err) throw usersResponse.err;
+
+      const users = usersResponse.data
+        .map((user) => this.normalizeUser(user as ZktecoRawUser))
+        .filter((user): user is NormalizedZktecoUser => Boolean(user));
+      const names = new Map(users.map((user) => [user.deviceUserId, user.name]));
+
+      return attendanceResponse.data
+        .map((record) =>
+          this.normalizeAttendanceRecord(record as ZktecoRawAttendanceRecord),
+        )
+        .filter((record): record is NormalizedAttendancePunch => Boolean(record))
+        .map((record) => ({
+          ...record,
+          employeeName: names.get(record.deviceUserId) ?? null,
+        }));
     });
   }
 

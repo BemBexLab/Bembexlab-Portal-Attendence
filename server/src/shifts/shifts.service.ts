@@ -30,12 +30,14 @@ export class ShiftsService {
   async create(user: CurrentUser, dto: CreateShiftDto) {
     if (dto.startMinutes === dto.endMinutes)
       throw new BadRequestException('Shift start and end must differ');
-    const organizationId = this.organizationId(user, dto.organizationId);
+    const name = dto.name.trim();
+    if (!name) throw new BadRequestException('Shift name is required');
+    const organizationId = await this.organizationId(user, dto.organizationId);
     try {
       return await this.prisma.shift.create({
         data: {
           organizationId,
-          name: dto.name.trim(),
+          name,
           startMinutes: dto.startMinutes,
           endMinutes: dto.endMinutes,
         },
@@ -53,10 +55,19 @@ export class ShiftsService {
     const end = dto.endMinutes ?? shift.endMinutes;
     if (start === end)
       throw new BadRequestException('Shift start and end must differ');
-    return this.prisma.shift.update({
-      where: { id },
-      data: { ...dto, name: dto.name?.trim() },
-    });
+    const name = dto.name?.trim();
+    if (dto.name !== undefined && !name)
+      throw new BadRequestException('Shift name is required');
+    try {
+      return await this.prisma.shift.update({
+        where: { id },
+        data: { ...dto, name },
+      });
+    } catch (error) {
+      if (this.unique(error))
+        throw new ConflictException('A shift with this name already exists');
+      throw error;
+    }
   }
 
   async remove(user: CurrentUser, id: string) {
@@ -116,11 +127,25 @@ export class ShiftsService {
       throw new ForbiddenException('User is not assigned to an organization');
     return { organizationId: user.organizationId };
   }
-  private organizationId(user: CurrentUser, requested?: string) {
+  private async organizationId(user: CurrentUser, requested?: string) {
     if (user.role === UserRole.SUPER_ADMIN) {
-      if (!requested)
-        throw new BadRequestException('organizationId is required');
-      return requested;
+      if (requested) return requested;
+
+      // The login-free isolated environment has a single seeded organization.
+      // Use it for the form-based shift CRUD so the client does not need to
+      // manufacture an organization selector. Keep the request explicit when
+      // more than one organization exists to avoid assigning data incorrectly.
+      const organizations = await this.prisma.organization.findMany({
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+        take: 2,
+      });
+      if (organizations.length === 1) return organizations[0].id;
+      if (organizations.length === 0)
+        throw new BadRequestException('No organization is configured');
+      throw new BadRequestException(
+        'organizationId is required when multiple organizations exist',
+      );
     }
     if (
       !user.organizationId ||

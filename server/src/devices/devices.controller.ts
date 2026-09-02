@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -17,6 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import type { CurrentUser } from '../auth/types/current-user.type';
 import { CreateDeviceDto } from './dto/create-device.dto';
+import { HistoricalAttendanceQueryDto } from './dto/historical-attendance-query.dto';
 import { TestDeviceDto } from './dto/test-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { DevicesService } from './devices.service';
@@ -73,6 +75,23 @@ export class DevicesController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.devicesService.fetchDeviceInfo(user, id);
+  }
+
+  @Get(':id/historical-attendance')
+  historicalAttendance(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: HistoricalAttendanceQueryDto,
+  ) {
+    return this.devicesService.getHistoricalAttendance(user, id, query);
+  }
+
+  @Get('historical-attendance')
+  historicalAttendanceAll(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Query() query: HistoricalAttendanceQueryDto,
+  ) {
+    return this.devicesService.getAllHistoricalAttendance(user, query);
   }
 
   @Post(':id/sync-attendance')

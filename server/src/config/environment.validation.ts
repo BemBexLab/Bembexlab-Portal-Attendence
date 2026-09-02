@@ -59,38 +59,15 @@ function validateZktecoProtocol(value?: string) {
 function validatePostgresUrl(value: string, key: string) {
   if (!value.startsWith('postgresql://') && !value.startsWith('postgres://')) {
     throw new Error(
-      `${key} must be a PostgreSQL connection string, not a Supabase API URL`,
+      `${key} must be a PostgreSQL connection string`,
     );
   }
 
   if (value.includes('REPLACE_WITH') || value.includes('REGION')) {
-    throw new Error(
-      `${key} still contains placeholder values from the Supabase template`,
-    );
+    throw new Error(`${key} still contains placeholder values`);
   }
 
   return value;
-}
-
-function validateSupabaseUrl(value: string, key: string) {
-  const parsedUrl = new URL(value);
-
-  if (
-    parsedUrl.protocol !== 'https:' ||
-    !parsedUrl.hostname.endsWith('.supabase.co')
-  ) {
-    throw new Error(`${key} must be a Supabase https://*.supabase.co URL`);
-  }
-
-  return value;
-}
-
-function validateOptionalSupabaseUrl(value: string | undefined, key: string) {
-  if (!value || value.trim().length === 0) {
-    return undefined;
-  }
-
-  return validateSupabaseUrl(value, key);
 }
 
 function validateRedis(config: EnvironmentConfig) {
@@ -155,16 +132,6 @@ export function validateEnvironment(config: EnvironmentConfig) {
     DIRECT_URL: directUrl
       ? validatePostgresUrl(directUrl, 'DIRECT_URL')
       : undefined,
-    SUPABASE_URL: validateOptionalSupabaseUrl(
-      config.SUPABASE_URL,
-      'SUPABASE_URL',
-    ),
-    SUPABASE_PUBLISHABLE_KEY: config.SUPABASE_PUBLISHABLE_KEY,
-    SUPABASE_SECRET_KEY: config.SUPABASE_SECRET_KEY,
-    SUPABASE_JWKS_URL: validateOptionalSupabaseUrl(
-      config.SUPABASE_JWKS_URL,
-      'SUPABASE_JWKS_URL',
-    ),
     NODE_ENV: config.NODE_ENV || 'development',
     CORS_ORIGIN: config.CORS_ORIGIN || '*',
     COOKIE_SECURE: config.COOKIE_SECURE,

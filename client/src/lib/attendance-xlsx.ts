@@ -8,6 +8,9 @@ type MonthlyEmployee = {
   employeeCode: string;
   employee: string;
   attendanceByDate: Map<string, AttendanceRow>;
+  absentDays: number;
+  halfDays: number;
+  totalDeductionDays: number;
 };
 
 const border = {
@@ -73,13 +76,22 @@ export async function downloadMonthlyAttendanceXlsx(
 
   sheet.mergeCells("A1:A2");
   sheet.mergeCells("B1:B2");
+  sheet.mergeCells("C1:C2");
+  sheet.mergeCells("D1:D2");
+  sheet.mergeCells("E1:E2");
   sheet.getCell("A1").value = "EMPLOYEE ID";
   sheet.getCell("B1").value = "NAME";
+  sheet.getCell("C1").value = "TOTAL ABSENT";
+  sheet.getCell("D1").value = "TOTAL HALF DAYS";
+  sheet.getCell("E1").value = "DEDUCTION DAYS";
   sheet.getColumn(1).width = 16;
   sheet.getColumn(2).width = 24;
+  sheet.getColumn(3).width = 16;
+  sheet.getColumn(4).width = 18;
+  sheet.getColumn(5).width = 18;
 
   dates.forEach((date, index) => {
-    const statusColumn = 3 + index * 2;
+    const statusColumn = 6 + index * 2;
     const checkInColumn = statusColumn + 1;
     const weekday = new Intl.DateTimeFormat("en-US", {
       timeZone: "UTC",
@@ -113,6 +125,9 @@ export async function downloadMonthlyAttendanceXlsx(
     const values: Array<string> = [
       employee.employeeCode,
       employee.employee,
+      String(employee.absentDays),
+      String(employee.halfDays),
+      String(employee.totalDeductionDays),
     ];
 
     dates.forEach((date) => {
@@ -128,7 +143,7 @@ export async function downloadMonthlyAttendanceXlsx(
       const attendance = employee.attendanceByDate.get(date);
       if (!attendance) return;
 
-      const cell = row.getCell(3 + index * 2);
+      const cell = row.getCell(6 + index * 2);
       const colors = statusColors[attendance.status];
       cell.fill = {
         type: "pattern",

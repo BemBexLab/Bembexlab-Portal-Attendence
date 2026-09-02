@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
@@ -8,6 +8,9 @@ export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy
 {
+  private readonly logger = new Logger(PrismaService.name);
+  private readonly databaseTarget: string;
+
   constructor(configService: ConfigService) {
     const configuredUrl = configService.getOrThrow<string>('DATABASE_URL');
     const databaseUrl = new URL(configuredUrl);
@@ -15,8 +18,8 @@ export class PrismaService
     databaseUrl.searchParams.delete('pgbouncer');
     const adapter = new PrismaPg({
       connectionString: databaseUrl.toString(),
-      // Keep the application pool small because Supabase pooler capacity is
-      // shared with background attendance synchronization and reports.
+      // Keep the application pool small because the VPS database is shared by
+      // background attendance synchronization and report queries.
       max: 5,
       min: 1,
       connectionTimeoutMillis: 30_000,
@@ -32,10 +35,12 @@ export class PrismaService
         timeout: 60_000,
       },
     });
+    this.databaseTarget = `${databaseUrl.hostname}:${databaseUrl.port || '5432'}/${databaseUrl.pathname.replace(/^\//, '')}`;
   }
 
   async onModuleInit() {
     await this.$connect();
+    this.logger.log(`PostgreSQL connection ready: ${this.databaseTarget}`);
   }
 
   async onModuleDestroy() {

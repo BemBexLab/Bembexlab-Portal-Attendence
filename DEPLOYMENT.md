@@ -1,6 +1,6 @@
 # Production Deployment
 
-Target: Linux VPS with Node.js, PM2, PostgreSQL access through Supabase, and Redis.
+Target: Linux VPS with Node.js, PM2, VPS-hosted PostgreSQL, and Redis.
 
 ## Server Requirements
 
@@ -25,7 +25,7 @@ npm run db:check
 npm run prisma:seed
 ```
 
-Use Supabase pooled PostgreSQL for `DATABASE_URL`. Use the direct PostgreSQL URL for `DIRECT_URL` when reachable. If the direct host is IPv6-only from the VPS, use Supabase's pooler URL for runtime and run migrations from a host that can reach the direct database.
+Set both `DATABASE_URL` and `DIRECT_URL` to the VPS PostgreSQL connection string. The application does not use Supabase for runtime data or migrations.
 
 Health check:
 
@@ -100,7 +100,7 @@ Restore:
 APP_DIR=/var/www/bembex-portal scripts/restore-database.sh /var/www/bembex-portal/backups/database/file.dump
 ```
 
-Keep encrypted off-server copies of backups. Supabase managed backups are useful, but application-owned exports are still recommended before releases and migrations.
+Keep encrypted off-server copies of VPS PostgreSQL backups. Application-owned exports are recommended before releases and migrations.
 
 ## ZKTeco K40 Sync
 

@@ -10,6 +10,7 @@ import {
   Clock4,
   CalendarRange,
   UsersRound,
+  FlaskConical,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -32,6 +33,7 @@ const navItems = [
   { href: "/devices", label: "Devices", icon: Fingerprint },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/raw-data", label: "Raw Data", icon: Rows3 },
+  { href: "/testing-names", label: "Testing Names", icon: FlaskConical },
 ];
 
 type AppShellProps = {
@@ -102,7 +104,7 @@ export function AppShell({ children, title, description }: AppShellProps) {
         </aside>
 
         <div className={cn("md:pl-64", !sidebarOpen && "md:pl-16")}>
-          <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
+          <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
             <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
               <div className="flex items-center gap-3">
                 <Button

@@ -70,7 +70,7 @@ export default function LeaveRemotePage() {
       title="Leave & Remote"
     >
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-        <Panel className="overflow-hidden">
+        <Panel>
           <PanelHeader>
             <div>
               <h2 className="text-sm font-semibold">Assign status in advance</h2>
@@ -208,7 +208,7 @@ export default function LeaveRemotePage() {
           </PanelBody>
         </Panel>
 
-        <Panel className="min-w-0 overflow-hidden">
+        <Panel className="min-w-0">
           <PanelHeader>
             <div>
               <h2 className="text-sm font-semibold">Upcoming assignments</h2>

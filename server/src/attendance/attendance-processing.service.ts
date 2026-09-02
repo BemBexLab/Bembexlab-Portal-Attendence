@@ -12,6 +12,7 @@ import {
 import {
   dateKeyToDatabaseDate,
   getDateKeyInTimeZone,
+  getNightShiftDateKey,
   zonedDateTimeToUtc,
 } from './utils/timezone';
 
@@ -29,6 +30,11 @@ const AUTOMATIC_CHECKOUT_DELAY_MINUTES = 60;
 @Injectable()
 export class AttendanceProcessingService {
   private readonly logger = new Logger(AttendanceProcessingService.name);
+  private readonly deviceSyncs = new Map<
+    string,
+    Promise<ProcessedDeviceResult>
+  >();
+  private allDevicesSync: Promise<AttendanceProcessingResult> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -37,6 +43,23 @@ export class AttendanceProcessingService {
   ) {}
 
   async processAllActiveDevices(): Promise<AttendanceProcessingResult> {
+    if (this.allDevicesSync) {
+      return this.allDevicesSync;
+    }
+
+    const sync = this.processAllActiveDevicesInternal();
+    this.allDevicesSync = sync;
+
+    try {
+      return await sync;
+    } finally {
+      if (this.allDevicesSync === sync) {
+        this.allDevicesSync = null;
+      }
+    }
+  }
+
+  private async processAllActiveDevicesInternal(): Promise<AttendanceProcessingResult> {
     const devices = await this.prisma.zktecoDevice.findMany({
       where: {
         status: {
@@ -318,6 +341,26 @@ export class AttendanceProcessingService {
   }
 
   async processDevice(deviceId: string): Promise<ProcessedDeviceResult> {
+    const activeSync = this.deviceSyncs.get(deviceId);
+    if (activeSync) {
+      return activeSync;
+    }
+
+    const sync = this.processDeviceInternal(deviceId);
+    this.deviceSyncs.set(deviceId, sync);
+
+    try {
+      return await sync;
+    } finally {
+      if (this.deviceSyncs.get(deviceId) === sync) {
+        this.deviceSyncs.delete(deviceId);
+      }
+    }
+  }
+
+  private async processDeviceInternal(
+    deviceId: string,
+  ): Promise<ProcessedDeviceResult> {
     const device = await this.prisma.zktecoDevice.findUniqueOrThrow({
       where: {
         id: deviceId,
@@ -409,6 +452,19 @@ export class AttendanceProcessingService {
 
       const fetchedPunches =
         await this.zktecoService.getAttendancePunches(device);
+      const firstPunchTime = fetchedPunches.reduce<Date | undefined>(
+        (earliest, punch) =>
+          !earliest || punch.punchTime < earliest
+            ? punch.punchTime
+            : earliest,
+        undefined,
+      );
+      await this.ensureDefaultShiftAssignments(
+        device.organizationId,
+        timezone,
+        databaseNow,
+        firstPunchTime,
+      );
       const { punchCutoff } = this.getRetentionCutoffs(databaseNow);
       const punches = fetchedPunches.filter(
         (punch) => punch.punchTime >= punchCutoff,
@@ -488,6 +544,7 @@ export class AttendanceProcessingService {
           organizationId: device.organizationId,
           employeeId,
           deviceId: device.id,
+          deviceNameSnapshot: device.name,
           punchTime: punch.punchTime,
           verificationType: punch.verificationType,
         };
@@ -504,20 +561,34 @@ export class AttendanceProcessingService {
       let dailyCalculated = 0;
       const dailyAttendance: AttendanceUpdatedPayload['dailyAttendance'] = [];
 
-      for (const affectedDay of affectedDays.values()) {
-        const dailyRecord = await this.calculateDailyAttendance(
-          affectedDay,
-          databaseNow,
+      // Recalculate in bounded batches. Each day requires several database
+      // reads and an upsert; doing them serially makes a manual sync exceed
+      // the browser/proxy timeout when many employees are affected.
+      const affectedDayList = [...affectedDays.values()];
+      const dailyBatchSize = 20;
+      for (
+        let index = 0;
+        index < affectedDayList.length;
+        index += dailyBatchSize
+      ) {
+        const batch = await Promise.all(
+          affectedDayList
+            .slice(index, index + dailyBatchSize)
+            .map((affectedDay) =>
+              this.calculateDailyAttendance(affectedDay, databaseNow),
+            ),
         );
-        dailyAttendance.push({
-          employeeId: dailyRecord.employeeId,
-          date: dailyRecord.date.toISOString().slice(0, 10),
-          firstCheckIn: dailyRecord.firstCheckIn?.toISOString() ?? null,
-          lastCheckOut: dailyRecord.lastCheckOut?.toISOString() ?? null,
-          workingMinutes: dailyRecord.workingMinutes,
-          status: dailyRecord.status,
-        });
-        dailyCalculated += 1;
+        dailyAttendance.push(
+          ...batch.map((dailyRecord) => ({
+            employeeId: dailyRecord.employeeId,
+            date: dailyRecord.date.toISOString().slice(0, 10),
+            firstCheckIn: dailyRecord.firstCheckIn?.toISOString() ?? null,
+            lastCheckOut: dailyRecord.lastCheckOut?.toISOString() ?? null,
+            workingMinutes: dailyRecord.workingMinutes,
+            status: dailyRecord.status,
+          })),
+        );
+        dailyCalculated += batch.length;
       }
 
       await this.prisma.zktecoDevice.update({
@@ -621,6 +692,12 @@ export class AttendanceProcessingService {
     const graceDeadline = new Date(
       scheduledStart.getTime() + GRACE_MINUTES * 60_000,
     );
+    // Device timestamps can include seconds, while attendance is displayed
+    // and evaluated at minute precision. Keep the entire grace-minute
+    // inclusive (e.g. 21:15:00 through 21:15:59 are on time).
+    const graceDeadlineInclusive = new Date(
+      graceDeadline.getTime() + 60_000 - 1,
+    );
     const window = {
       start: new Date(scheduledStart.getTime() - PUNCH_WINDOW_MINUTES * 60_000),
       end: new Date(scheduledEnd.getTime() + PUNCH_WINDOW_MINUTES * 60_000),
@@ -657,7 +734,7 @@ export class AttendanceProcessingService {
         ? lastPunch
         : null;
     const arrivedAfterDeadline =
-      firstCheckIn !== null && firstCheckIn > graceDeadline;
+      firstCheckIn !== null && firstCheckIn > graceDeadlineInclusive;
     const status = firstCheckIn
       ? arrivedAfterDeadline
         ? AttendanceStatus.LATE
@@ -724,6 +801,64 @@ export class AttendanceProcessingService {
         graceDeadline,
       },
     });
+  }
+
+  private async ensureDefaultShiftAssignments(
+    organizationId: string,
+    timezone: string,
+    databaseNow: Date,
+    firstPunchTime?: Date,
+  ) {
+    let shift = await this.prisma.shift.findFirst({
+      where: { organizationId, startMinutes: 21 * 60, endMinutes: 6 * 60 },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!shift) {
+      try {
+        shift = await this.prisma.shift.create({
+          data: {
+            organizationId,
+            name: 'Default Night Shift',
+            startMinutes: 21 * 60,
+            endMinutes: 6 * 60,
+          },
+        });
+      } catch (error) {
+        if (!this.isUniqueConstraintError(error)) throw error;
+        shift = await this.prisma.shift.findUniqueOrThrow({
+          where: {
+            organizationId_name: {
+              organizationId,
+              name: 'Default Night Shift',
+            },
+          },
+        });
+      }
+    }
+
+    const effectiveFrom = dateKeyToDatabaseDate(
+      firstPunchTime
+        ? getNightShiftDateKey(firstPunchTime, timezone)
+        : getDateKeyInTimeZone(databaseNow, timezone || 'Asia/Karachi'),
+    );
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        organizationId,
+        isActive: true,
+        deviceUserId: { not: null },
+        shiftAssignments: { none: {} },
+      },
+      select: { id: true },
+    });
+    if (employees.length) {
+      await this.prisma.employeeShiftAssignment.createMany({
+        data: employees.map((employee) => ({
+          employeeId: employee.id,
+          shiftId: shift.id,
+          effectiveFrom,
+        })),
+      });
+    }
   }
 
   private resolveShiftDateKey(
@@ -798,5 +933,14 @@ export class AttendanceProcessingService {
 
   private getErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'P2002'
+    );
   }
 }

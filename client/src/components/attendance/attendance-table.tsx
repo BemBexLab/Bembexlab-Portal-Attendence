@@ -122,13 +122,22 @@ export function AttendanceTable() {
   const setSearch = useDashboardStore((state) => state.setAttendanceSearch);
   const setDepartment = useDashboardStore((state) => state.setDepartmentFilter);
   const rows = useMemo(
-    () =>
-      view === "monthly"
-        ? (monthlyAttendance.data?.rows ?? []).filter((row) => {
-            const weekday = new Date(`${row.date}T00:00:00.000Z`).getUTCDay();
-            return weekday !== 0 && weekday !== 6;
-          })
-        : (attendance.data?.rows ?? []),
+    () => {
+      const sourceRows =
+        view === "monthly"
+          ? (monthlyAttendance.data?.rows ?? []).filter((row) => {
+              const weekday = new Date(`${row.date}T00:00:00.000Z`).getUTCDay();
+              return weekday !== 0 && weekday !== 6;
+            })
+          : (attendance.data?.rows ?? []);
+
+      return [...sourceRows].sort(
+        (left, right) =>
+          left.employee.localeCompare(right.employee, undefined, {
+            sensitivity: "base",
+          }) || left.employeeCode.localeCompare(right.employeeCode),
+      );
+    },
     [attendance.data?.rows, monthlyAttendance.data?.rows, view],
   );
 
@@ -180,6 +189,9 @@ export function AttendanceTable() {
                 employeeCode: row.employeeCode,
                 employee: row.employee,
                 attendanceByDate: new Map<string, AttendanceRow>(),
+                absentDays: 0,
+                halfDays: 0,
+                totalDeductionDays: 0,
               };
               employee.attendanceByDate.set(row.date, row);
               employees.set(row.employeeId, employee);
@@ -192,12 +204,47 @@ export function AttendanceTable() {
                 employeeCode: string;
                 employee: string;
                 attendanceByDate: Map<string, AttendanceRow>;
+                absentDays: number;
+                halfDays: number;
+                totalDeductionDays: number;
               }
             >(),
           )
           .values(),
+      ).sort(
+        (left, right) =>
+          left.employee.localeCompare(right.employee, undefined, {
+            sensitivity: "base",
+          }) || left.employeeCode.localeCompare(right.employeeCode),
       ),
     [filteredRows],
+  );
+  const monthlyEmployeesWithTotals = useMemo(
+    () =>
+      monthlyEmployees.map((employee) => {
+        const absentDays = monthlyDates.reduce(
+          (total, date) =>
+            total +
+            (employee.attendanceByDate.get(date)?.status === "ABSENT" ? 1 : 0),
+          0,
+        );
+        const halfDays = monthlyDates.reduce(
+          (total, date) =>
+            total +
+            (employee.attendanceByDate.get(date)?.status === "HALF_DAY"
+              ? 1
+              : 0),
+          0,
+        );
+
+        return {
+          ...employee,
+          absentDays,
+          halfDays,
+          totalDeductionDays: absentDays + Math.floor(halfDays / 3),
+        };
+      }),
+    [monthlyDates, monthlyEmployees],
   );
   const exportXlsx = async () => {
     const period =
@@ -211,7 +258,7 @@ export function AttendanceTable() {
         await downloadMonthlyAttendanceXlsx(
           `attendance-${period}.xlsx`,
           monthlyDates,
-          monthlyEmployees,
+          monthlyEmployeesWithTotals,
           currentDate,
         );
       } else {
@@ -382,7 +429,7 @@ export function AttendanceTable() {
           {view === "monthly" ? (
             <table
               className="border-separate border-spacing-0 text-left text-xs"
-              style={{ minWidth: 344 + monthlyDates.length * 240 }}
+              style={{ minWidth: 704 + monthlyDates.length * 240 }}
             >
               <thead className="text-muted-foreground">
                 <tr>
@@ -390,7 +437,7 @@ export function AttendanceTable() {
                     className="sticky left-0 z-20 w-16 min-w-16 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
                     rowSpan={2}
                   >
-                    Serial Number
+                    S.No
                   </th>
                   <th
                     className="sticky left-16 z-20 w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
@@ -403,6 +450,24 @@ export function AttendanceTable() {
                     rowSpan={2}
                   >
                     Name
+                  </th>
+                  <th
+                    className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
+                    rowSpan={2}
+                  >
+                    Total Absent
+                  </th>
+                  <th
+                    className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
+                    rowSpan={2}
+                  >
+                    Total Half Days
+                  </th>
+                  <th
+                    className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
+                    rowSpan={2}
+                  >
+                    Deduction Days
                   </th>
                   {monthlyDates.map((date) => {
                     const heading = formatCycleDate(date);
@@ -449,16 +514,25 @@ export function AttendanceTable() {
                 </tr>
               </thead>
               <tbody>
-                {monthlyEmployees.map((employee, index) => (
+                {monthlyEmployeesWithTotals.map((employee, index) => (
                   <tr className="group" key={employee.id}>
-                    <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium tabular-nums group-hover:bg-muted/40">
+                    <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium tabular-nums group-hover:bg-muted">
                       {index + 1}
                     </td>
-                    <td className="sticky left-16 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted/40">
+                    <td className="sticky left-16 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted">
                       {employee.employeeCode}
                     </td>
-                    <td className="sticky left-44 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted/40">
+                    <td className="sticky left-44 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium shadow-[4px_0_8px_-6px_var(--border)] group-hover:bg-muted">
                       {employee.employee}
+                    </td>
+                    <td className="border-b border-r border-border px-3 py-2 text-center font-medium tabular-nums">
+                      {employee.absentDays}
+                    </td>
+                    <td className="border-b border-r border-border px-3 py-2 text-center font-medium tabular-nums">
+                      {employee.halfDays}
+                    </td>
+                    <td className="border-b border-r border-border px-3 py-2 text-center font-medium tabular-nums">
+                      {employee.totalDeductionDays}
                     </td>
                     {monthlyDates.map((date) => {
                       const row = employee.attendanceByDate.get(date);
@@ -481,7 +555,7 @@ export function AttendanceTable() {
             <table className="w-full min-w-[780px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
-                  <th className="w-16 px-4 py-3 font-medium">Serial Number</th>
+                  <th className="w-16 px-4 py-3 font-medium">S.No</th>
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Emp Code</th>
                   <th className="px-4 py-3 font-medium">Arrival</th>

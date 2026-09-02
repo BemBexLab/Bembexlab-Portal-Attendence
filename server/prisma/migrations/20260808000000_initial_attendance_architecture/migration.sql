@@ -1,7 +1,7 @@
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
--- Enable database-side UUID generation for Supabase PostgreSQL.
+-- Enable database-side UUID generation for PostgreSQL.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- CreateEnum

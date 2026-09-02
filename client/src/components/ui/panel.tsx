@@ -20,8 +20,9 @@ export function Panel({ children, className }: PanelProps) {
 export function PanelHeader({ children, className }: PanelProps) {
   return (
     <div
+      data-panel-header
       className={cn(
-        "flex min-h-14 items-center justify-between gap-3 border-b border-border px-4 py-3",
+        "sticky top-[var(--app-header-height)] z-40 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 shadow-[0_1px_0_var(--border)]",
         className,
       )}
     >
@@ -31,5 +32,9 @@ export function PanelHeader({ children, className }: PanelProps) {
 }
 
 export function PanelBody({ children, className }: PanelProps) {
-  return <div className={cn("p-4", className)}>{children}</div>;
+  return (
+    <div data-panel-body className={cn("p-4", className)}>
+      {children}
+    </div>
+  );
 }

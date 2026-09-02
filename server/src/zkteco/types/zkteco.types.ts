@@ -36,3 +36,7 @@ export type NormalizedZktecoUser = {
   deviceUserId: string;
   name: string | null;
 };
+
+export type DirectZktecoAttendancePunch = NormalizedAttendancePunch & {
+  employeeName: string | null;
+};

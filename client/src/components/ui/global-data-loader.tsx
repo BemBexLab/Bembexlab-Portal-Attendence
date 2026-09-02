@@ -2,11 +2,13 @@
 
 import { useIsFetching } from "@tanstack/react-query";
 import { LoaderCircle } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 export function GlobalDataLoader() {
+  const pathname = usePathname();
   const activeFetches = useIsFetching();
 
-  if (activeFetches === 0) return null;
+  if (activeFetches === 0 || pathname === "/raw-data") return null;
 
   return (
     <div

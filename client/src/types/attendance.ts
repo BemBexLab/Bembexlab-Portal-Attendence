@@ -155,6 +155,27 @@ export type DeviceSyncResult = {
   error?: string;
 };
 
+export type DirectDevicePunch = {
+  deviceId: string;
+  deviceName: string;
+  deviceIp: string;
+  devicePort: number;
+  deviceUserId: string;
+  employeeName: string | null;
+  punchTime: string;
+  verificationType: string;
+  raw: Record<string, unknown>;
+};
+
+export type DirectDeviceAttendanceResponse = {
+  source: string;
+  devices: Array<Pick<Device, "id" | "name" | "ip" | "port">>;
+  fetchedAt: string;
+  total: number;
+  errors: Array<{ deviceId: string; deviceName: string; error: string }>;
+  data: DirectDevicePunch[];
+};
+
 export type DashboardSummary = {
   totalEmployees: number;
   presentCount: number;

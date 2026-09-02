@@ -31,7 +31,7 @@ export function DepartmentChart({ className }: { className?: string }) {
   const rows = departments.data ?? [];
 
   return (
-    <Panel className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
+    <Panel className={cn("flex h-full min-w-0 flex-col", className)}>
       <PanelHeader>
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Department attendance</h2>

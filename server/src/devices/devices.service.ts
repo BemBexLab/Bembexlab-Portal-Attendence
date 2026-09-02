@@ -12,6 +12,7 @@ import { AttendanceProcessingService } from '../attendance/attendance-processing
 import { PrismaService } from '../prisma/prisma.service';
 import { ZKTecoService } from '../zkteco/zkteco.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
+import { HistoricalAttendanceQueryDto } from './dto/historical-attendance-query.dto';
 import { TestDeviceDto } from './dto/test-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { DeviceSyncResult } from './types/device-sync-result.type';
@@ -34,7 +35,32 @@ export class DevicesService {
   }
 
   async addDevice(user: CurrentUser, dto: CreateDeviceDto) {
-    const organizationId = this.resolveOrganizationId(user, dto.organizationId);
+    const organizationId = await this.resolveOrganizationId(user, dto.organizationId);
+
+    // Removing a device with attendance history intentionally leaves an
+    // INACTIVE row behind. Adding the same endpoint again should restore that
+    // device instead of producing a misleading duplicate error.
+    const existing = await this.prisma.zktecoDevice.findFirst({
+      where: {
+        organizationId,
+        ip: dto.ip,
+        port: dto.port,
+      },
+    });
+    if (existing) {
+      if (existing.status === DeviceStatus.INACTIVE) {
+        return this.prisma.zktecoDevice.update({
+          where: { id: existing.id },
+          data: {
+            name: dto.name.trim(),
+            status: dto.status ?? DeviceStatus.ACTIVE,
+          },
+        });
+      }
+      throw new ConflictException(
+        'A device with this IP and port already exists for this organization',
+      );
+    }
 
     try {
       return await this.prisma.zktecoDevice.create({
@@ -85,36 +111,18 @@ export class DevicesService {
 
   async removeDevice(user: CurrentUser, id: string) {
     const device = await this.getAccessibleDevice(user, id);
-    const logCount = await this.prisma.attendanceLog.count({
-      where: {
-        deviceId: device.id,
-      },
-    });
-
-    if (logCount > 0) {
-      return {
-        removed: false,
-        deactivated: true,
-        device: await this.prisma.zktecoDevice.update({
-          where: {
-            id: device.id,
-          },
-          data: {
-            status: DeviceStatus.INACTIVE,
-          },
-        }),
-      };
-    }
-
-    await this.prisma.zktecoDevice.delete({
-      where: {
-        id: device.id,
-      },
+    const removed = await this.prisma.$transaction(async (tx) => {
+      const logCount = await tx.attendanceLog.count({
+        where: { deviceId: device.id },
+      });
+      await tx.zktecoDevice.delete({ where: { id: device.id } });
+      return logCount;
     });
 
     return {
       removed: true,
       deactivated: false,
+      preservedLogs: removed,
     };
   }
 
@@ -185,6 +193,113 @@ export class DevicesService {
     }
   }
 
+  async getHistoricalAttendance(
+    user: CurrentUser,
+    id: string,
+    query: HistoricalAttendanceQueryDto,
+  ) {
+    const device = await this.getAccessibleDevice(user, id);
+    const from = query.from ? new Date(query.from) : undefined;
+    const to = query.to ? new Date(query.to) : undefined;
+    if (from && to && from > to) {
+      throw new BadRequestException('From date must be before To date');
+    }
+    const search = query.search?.trim().toLowerCase();
+
+    try {
+      const punches = await this.zktecoService.getHistoricalAttendance(device);
+      const filtered = punches
+        .filter((punch) => !from || punch.punchTime >= from)
+        .filter((punch) => !to || punch.punchTime <= to)
+        .filter(
+          (punch) =>
+            !search ||
+            punch.deviceUserId.toLowerCase().includes(search) ||
+            punch.employeeName?.toLowerCase().includes(search),
+        )
+        .sort((left, right) => right.punchTime.getTime() - left.punchTime.getTime());
+
+      await this.markDeviceStatus(device.id, DeviceStatus.ACTIVE);
+      return {
+        source: 'ZKTeco device',
+        device: { id: device.id, name: device.name, ip: device.ip, port: device.port },
+        fetchedAt: new Date().toISOString(),
+        total: filtered.length,
+        data: filtered.map((punch) => ({
+          deviceUserId: punch.deviceUserId,
+          employeeName: punch.employeeName,
+          punchTime: punch.punchTime.toISOString(),
+          verificationType: punch.verificationType,
+          raw: punch.raw,
+        })),
+      };
+    } catch (error) {
+      await this.markDeviceStatus(device.id, DeviceStatus.OFFLINE);
+      throw error;
+    }
+  }
+
+  async getAllHistoricalAttendance(
+    user: CurrentUser,
+    query: HistoricalAttendanceQueryDto,
+  ) {
+    const devices = await this.prisma.zktecoDevice.findMany({
+      where: this.createTenantFilter(user),
+      orderBy: { createdAt: 'asc' },
+    });
+    const data: Array<{
+      deviceId: string;
+      deviceName: string;
+      deviceIp: string;
+      devicePort: number;
+      deviceUserId: string;
+      employeeName: string | null;
+      punchTime: string;
+      verificationType: string;
+      raw: Record<string, unknown>;
+    }> = [];
+    const errors: Array<{ deviceId: string; deviceName: string; error: string }> = [];
+
+    for (const device of devices) {
+      try {
+        const result = await this.getHistoricalAttendance(user, device.id, query);
+        for (const punch of result.data) {
+          data.push({
+            deviceId: device.id,
+            deviceName: device.name,
+            deviceIp: device.ip,
+            devicePort: device.port,
+            ...punch,
+          });
+        }
+      } catch (error) {
+        errors.push({
+          deviceId: device.id,
+          deviceName: device.name,
+          error: this.getErrorMessage(error),
+        });
+      }
+    }
+
+    data.sort(
+      (left, right) =>
+        new Date(right.punchTime).getTime() - new Date(left.punchTime).getTime(),
+    );
+    return {
+      source: 'ZKTeco devices',
+      devices: devices.map((device) => ({
+        id: device.id,
+        name: device.name,
+        ip: device.ip,
+        port: device.port,
+      })),
+      fetchedAt: new Date().toISOString(),
+      total: data.length,
+      errors,
+      data,
+    };
+  }
+
   private async getAccessibleDevice(user: CurrentUser, id: string) {
     const device = await this.prisma.zktecoDevice.findFirst({
       where: {
@@ -214,15 +329,24 @@ export class DevicesService {
     };
   }
 
-  private resolveOrganizationId(user: CurrentUser, organizationId?: string) {
+  private async resolveOrganizationId(user: CurrentUser, organizationId?: string) {
     if (user.role === UserRole.SUPER_ADMIN) {
-      if (!organizationId) {
-        throw new BadRequestException(
-          'organizationId is required for SUPER_ADMIN device creation',
-        );
-      }
+      if (organizationId) return organizationId;
 
-      return organizationId;
+      // The login-free isolated environment has one seeded organization.
+      // Resolve it automatically for the device CRUD form; require an
+      // explicit organization if the deployment later becomes multi-tenant.
+      const organizations = await this.prisma.organization.findMany({
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+        take: 2,
+      });
+      if (organizations.length === 1) return organizations[0].id;
+      if (organizations.length === 0)
+        throw new BadRequestException('No organization is configured');
+      throw new BadRequestException(
+        'organizationId is required when multiple organizations exist',
+      );
     }
 
     if (!user.organizationId) {
