@@ -10,6 +10,7 @@ import type {
   DirectDeviceAttendanceResponse,
   DeviceSyncResult,
   Employee,
+  EmployeeCredential,
   ReportAnalytics,
   ScheduledAttendanceStatus,
   Shift,
@@ -17,6 +18,26 @@ import type {
 
 export async function getEmployees() {
   const response = await api.get<Employee[]>("/users/employees");
+  return response.data;
+}
+
+export async function getEmployeeCredentials() {
+  const response = await api.get<EmployeeCredential[]>(
+    "/users/employee-credentials",
+  );
+  return response.data;
+}
+
+export async function updateEmployeeCredentials(input: {
+  employeeId: string;
+  email: string;
+  password?: string;
+}) {
+  const { employeeId, ...data } = input;
+  const response = await api.patch<EmployeeCredential>(
+    `/users/employees/${employeeId}/credentials`,
+    data,
+  );
   return response.data;
 }
 

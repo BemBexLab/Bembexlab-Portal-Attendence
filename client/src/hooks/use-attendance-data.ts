@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { Employee, Shift } from "@/types/attendance";
+import type { Employee, EmployeeCredential, Shift } from "@/types/attendance";
 
 import {
   fetchDeviceInfo,
@@ -16,6 +16,7 @@ import {
   deleteDevice,
   getDirectDeviceAttendance,
   getEmployees,
+  getEmployeeCredentials,
   syncDeviceAttendance,
   testDevice,
   updateAttendanceStatus,
@@ -24,6 +25,7 @@ import {
   removeScheduledAttendanceStatus,
   updateEmployeeStatus,
   updateEmployeeSalary,
+  updateEmployeeCredentials,
   getShifts,
   createShift,
   updateShift,
@@ -129,6 +131,35 @@ export function useEmployees() {
   return useQuery({
     queryKey: attendanceKeys.employees,
     queryFn: getEmployees,
+  });
+}
+
+export function useEmployeeCredentials() {
+  return useQuery({
+    queryKey: ["employees", "credentials"],
+    queryFn: getEmployeeCredentials,
+  });
+}
+
+export function useUpdateEmployeeCredentials() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateEmployeeCredentials,
+    onSuccess: (updatedEmployee) => {
+      queryClient.setQueryData<EmployeeCredential[]>(
+        ["employees", "credentials"],
+        (current) =>
+          current?.map((employee) =>
+            employee.employeeId === updatedEmployee.employeeId
+              ? updatedEmployee
+              : employee,
+          ),
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["employees", "credentials"],
+      });
+    },
   });
 }
 

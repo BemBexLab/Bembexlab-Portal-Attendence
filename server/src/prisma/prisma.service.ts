@@ -18,9 +18,11 @@ export class PrismaService
     databaseUrl.searchParams.delete('pgbouncer');
     const adapter = new PrismaPg({
       connectionString: databaseUrl.toString(),
-      // Keep the application pool small because the VPS database is shared by
-      // background attendance synchronization and report queries.
-      max: 5,
+      // Keep a bounded pool while allowing attendance recalculation batches
+      // to finish before the frontend proxy timeout. Report queries and
+      // background sync still share this cap rather than opening unbounded
+      // connections to the VPS database.
+      max: 10,
       min: 1,
       connectionTimeoutMillis: 30_000,
       idleTimeoutMillis: 60_000,

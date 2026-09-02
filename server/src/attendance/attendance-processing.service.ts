@@ -565,7 +565,7 @@ export class AttendanceProcessingService {
       // reads and an upsert; doing them serially makes a manual sync exceed
       // the browser/proxy timeout when many employees are affected.
       const affectedDayList = [...affectedDays.values()];
-      const dailyBatchSize = 20;
+      const dailyBatchSize = 40;
       for (
         let index = 0;
         index < affectedDayList.length;

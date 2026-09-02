@@ -1,5 +1,6 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, BadRequestException } from '@nestjs/common';
 import { User, UserRole } from '@prisma/client';
+import bcrypt from 'bcrypt';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type { CurrentUser } from '../auth/types/current-user.type';
@@ -7,6 +8,7 @@ import {
   dateKeyToDatabaseDate,
   getDateKeyInTimeZone,
 } from '../attendance/utils/timezone';
+import { UpdateEmployeeCredentialsDto } from './dto/update-employee-credentials.dto';
 
 export type SafeUser = Omit<User, 'passwordHash'>;
 
@@ -117,6 +119,129 @@ export class UsersService {
           }
         : null,
     }));
+  }
+
+  async listEmployeeCredentials(user: CurrentUser) {
+    if (user.role !== UserRole.SUPER_ADMIN && !user.organizationId) {
+      throw new ForbiddenException('User is not assigned to an organization');
+    }
+
+    const employees = await this.prisma.employee.findMany({
+      where:
+        user.role === UserRole.SUPER_ADMIN
+          ? {}
+          : { organizationId: user.organizationId as string },
+      select: {
+        id: true,
+        employeeCode: true,
+        deviceUserId: true,
+        name: true,
+        isActive: true,
+        user: {
+          select: {
+            email: true,
+            isActive: true,
+          },
+        },
+      },
+      orderBy: [{ name: 'asc' }, { employeeCode: 'asc' }],
+    });
+
+    return employees.map((employee) => ({
+      employeeId: employee.id,
+      employeeCode: employee.deviceUserId ?? employee.employeeCode,
+      name: employee.name,
+      isActive: employee.isActive,
+      email: employee.user?.email ?? null,
+      hasPassword: Boolean(employee.user),
+      loginActive: employee.user?.isActive ?? false,
+    }));
+  }
+
+  async updateEmployeeCredentials(
+    user: CurrentUser,
+    employeeId: string,
+    dto: UpdateEmployeeCredentialsDto,
+  ) {
+    if (user.role !== UserRole.SUPER_ADMIN && !user.organizationId) {
+      throw new ForbiddenException('User is not assigned to an organization');
+    }
+
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        id: true,
+        organizationId: true,
+        employeeCode: true,
+        deviceUserId: true,
+        name: true,
+        user: { select: { id: true } },
+      },
+    });
+    if (!employee) throw new BadRequestException('Employee not found');
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      employee.organizationId !== user.organizationId
+    ) {
+      throw new ForbiddenException('Cannot update another organization');
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const emailOwner = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (emailOwner && emailOwner.id !== employee.user?.id) {
+      throw new ConflictException('This email address is already in use');
+    }
+    if (!employee.user && !dto.password) {
+      throw new BadRequestException('A password is required for a new login');
+    }
+
+    const passwordHash = dto.password
+      ? await bcrypt.hash(dto.password, 12)
+      : undefined;
+
+    try {
+      const account = employee.user
+        ? await this.prisma.user.update({
+            where: { id: employee.user.id },
+            data: {
+              email,
+              name: employee.name,
+              role: UserRole.EMPLOYEE,
+              organizationId: employee.organizationId,
+              ...(passwordHash ? { passwordHash } : {}),
+            },
+            select: { id: true, email: true, isActive: true },
+          })
+        : await this.prisma.user.create({
+            data: {
+              organizationId: employee.organizationId,
+              employeeId: employee.id,
+              name: employee.name,
+              email,
+              passwordHash: passwordHash as string,
+              role: UserRole.EMPLOYEE,
+              isActive: true,
+            },
+            select: { id: true, email: true, isActive: true },
+          });
+
+      return {
+        employeeId: employee.id,
+        employeeCode: employee.deviceUserId ?? employee.employeeCode,
+        name: employee.name,
+        email: account.email,
+        hasPassword: true,
+        loginActive: account.isActive,
+      };
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('This email address is already in use');
+      }
+      throw error;
+    }
   }
 
   private async ensureDefaultShiftAssignments(organizationId: string) {

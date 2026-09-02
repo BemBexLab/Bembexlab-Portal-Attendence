@@ -27,6 +27,16 @@ export type Employee = {
   } | null;
 };
 
+export type EmployeeCredential = {
+  employeeId: string;
+  employeeCode: string;
+  name: string;
+  isActive: boolean;
+  email: string | null;
+  hasPassword: boolean;
+  loginActive: boolean;
+};
+
 export type Shift = {
   id: string;
   name: string;

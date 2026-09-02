@@ -9,6 +9,7 @@ import type { CurrentUser } from '../auth/types/current-user.type';
 import { UsersService } from './users.service';
 import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
 import { UpdateEmployeeSalaryDto } from './dto/update-employee-salary.dto';
+import { UpdateEmployeeCredentialsDto } from './dto/update-employee-credentials.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -24,6 +25,12 @@ export class UsersController {
   @Get('employees')
   listEmployees(@CurrentUserDecorator() user: CurrentUser) {
     return this.usersService.listEmployees(user);
+  }
+
+  @Get('employee-credentials')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
+  listEmployeeCredentials(@CurrentUserDecorator() user: CurrentUser) {
+    return this.usersService.listEmployeeCredentials(user);
   }
 
   @Patch('employees/:id/status')
@@ -48,5 +55,15 @@ export class UsersController {
       id,
       dto.monthlySalary,
     );
+  }
+
+  @Patch('employees/:id/credentials')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
+  updateEmployeeCredentials(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEmployeeCredentialsDto,
+  ) {
+    return this.usersService.updateEmployeeCredentials(user, id, dto);
   }
 }

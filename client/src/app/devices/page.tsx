@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Fingerprint, Info, Pencil, Plus, RefreshCw, Trash2, Wifi } from "lucide-react";
+import { Fingerprint, Info, Pencil, Plus, RefreshCw, Trash2, Wifi, X } from "lucide-react";
 import axios from "axios";
 import Swal from "sweetalert2";
 
@@ -18,7 +18,7 @@ import {
   useTestDevice,
   useUpdateDevice,
 } from "@/hooks/use-attendance-data";
-import type { DeviceInfoResponse, DeviceSyncResult } from "@/types/attendance";
+import type { DeviceSyncResult } from "@/types/attendance";
 
 export default function DevicesPage() {
   const devices = useDevices();
@@ -28,9 +28,6 @@ export default function DevicesPage() {
   const testDevice = useTestDevice();
   const fetchDeviceInfo = useFetchDeviceInfo();
   const syncDeviceAttendance = useSyncDeviceAttendance();
-  const [deviceInfo, setDeviceInfo] = useState<
-    Record<string, DeviceInfoResponse>
-  >({});
   const [syncResults, setSyncResults] = useState<
     Record<string, DeviceSyncResult>
   >({});
@@ -44,15 +41,28 @@ export default function DevicesPage() {
     return error instanceof Error ? error.message : "Request failed";
   };
 
-  const handleFetchInfo = async (deviceId: string) => {
-    setDeviceErrors((current) => ({ ...current, [deviceId]: "" }));
+  const handleFetchInfo = async (device: NonNullable<typeof devices.data>[number]) => {
+    setDeviceErrors((current) => ({ ...current, [device.id]: "" }));
     try {
-      const info = await fetchDeviceInfo.mutateAsync(deviceId);
-      setDeviceInfo((current) => ({ ...current, [deviceId]: info }));
+      // This endpoint opens a fresh connection to the selected machine and
+      // reads its current counters. Show only that response in a modal so
+      // information from another device cannot linger on the page.
+      const result = await fetchDeviceInfo.mutateAsync(device.id);
+      const currentInfo = JSON.stringify(result.info, null, 2);
+      await Swal.fire({
+        title: `${device.name} · Current info`,
+        html: `<pre style="margin:0;text-align:left;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace">${currentInfo
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")}</pre>`,
+        width: 520,
+        confirmButtonText: "Close",
+        confirmButtonColor: "#171717",
+      });
     } catch (error) {
       setDeviceErrors((current) => ({
         ...current,
-        [deviceId]: getErrorMessage(error),
+        [device.id]: getErrorMessage(error),
       }));
     }
   };
@@ -277,16 +287,21 @@ export default function DevicesPage() {
                   </div>
                 ) : null}
                 {deviceErrors[device.id] ? (
-                  <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                    {deviceErrors[device.id]}
-                  </p>
-                ) : null}
-                {deviceInfo[device.id] ? (
-                  <div className="mt-3 rounded-md bg-muted p-3 text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground">Device info</p>
-                    <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap">
-                      {JSON.stringify(deviceInfo[device.id].info, null, 2)}
-                    </pre>
+                  <div className="relative mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 pr-9 text-xs text-red-700">
+                    <p>{deviceErrors[device.id]}</p>
+                    <button
+                      aria-label={`Dismiss error for ${device.name}`}
+                      className="absolute right-2 top-2 rounded p-0.5 text-red-600 transition-colors hover:bg-red-100 hover:text-red-800"
+                      onClick={() =>
+                        setDeviceErrors((current) => ({
+                          ...current,
+                          [device.id]: "",
+                        }))
+                      }
+                      type="button"
+                    >
+                      <X className="size-4" />
+                    </button>
                   </div>
                 ) : null}
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -298,14 +313,14 @@ export default function DevicesPage() {
                     <Wifi className="size-4" />
                     Test
                   </Button>
-                  <Button
+                  {/* <Button
                     disabled={fetchDeviceInfo.isPending}
-                    onClick={() => handleFetchInfo(device.id)}
+                    onClick={() => void handleFetchInfo(device)}
                     type="button"
                   >
                     <Info className="size-4" />
                     Info
-                  </Button>
+                  </Button> */}
                   <Button
                     aria-label={`Edit ${device.name}`}
                     disabled={updateDevice.isPending}
