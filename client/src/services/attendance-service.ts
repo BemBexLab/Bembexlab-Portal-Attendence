@@ -11,6 +11,7 @@ import type {
   DeviceSyncResult,
   Employee,
   EmployeeCredential,
+  EmployeeRequest,
   ReportAnalytics,
   ScheduledAttendanceStatus,
   Shift,
@@ -37,6 +38,24 @@ export async function updateEmployeeCredentials(input: {
   const response = await api.patch<EmployeeCredential>(
     `/users/employees/${employeeId}/credentials`,
     data,
+  );
+  return response.data;
+}
+
+export async function getEmployeeRequests(status?: EmployeeRequest["status"]) {
+  const response = await api.get<EmployeeRequest[]>("/requests", {
+    params: status ? { status } : undefined,
+  });
+  return response.data;
+}
+
+export async function updateEmployeeRequestStatus(input: {
+  id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+}) {
+  const response = await api.patch<Pick<EmployeeRequest, "id" | "status" | "decidedAt">>(
+    `/requests/${input.id}/status`,
+    { status: input.status },
   );
   return response.data;
 }

@@ -13,6 +13,7 @@ import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { ShiftsModule } from './shifts/shifts.module';
+import { RequestsModule } from './requests/requests.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ShiftsModule } from './shifts/shifts.module';
     AttendanceModule,
     ReportsModule,
     HealthModule,
+    RequestsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

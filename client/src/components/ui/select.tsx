@@ -6,7 +6,11 @@ import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
-export type SelectOption = { value: string; label: string };
+export type SelectOption = {
+  value: string;
+  label: string;
+  indicatorClassName?: string;
+};
 
 export function Select({ value, options, onChange, placeholder = "Select", ariaLabel, className, triggerClassName, menuMinWidth = 180, disabled = false }: {
   value: string;
@@ -56,12 +60,17 @@ export function Select({ value, options, onChange, placeholder = "Select", ariaL
 
   return <div className={cn("relative", className)} data-custom-select>
     <button aria-expanded={open} aria-haspopup="listbox" aria-label={ariaLabel} className={cn("flex h-9 min-w-0 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-left text-sm outline-none transition hover:bg-muted/40 focus:ring-2 focus:ring-ring/20 disabled:cursor-wait disabled:opacity-60", triggerClassName)} disabled={disabled} onClick={toggleMenu} ref={triggerRef} type="button">
-      <span className={cn("min-w-0 truncate", !selected && "text-muted-foreground")}>{selected?.label ?? placeholder}</span>
+      <span className={cn("flex min-w-0 items-center gap-2 truncate", !selected && "text-muted-foreground")}>
+        {selected?.indicatorClassName ? (
+          <span className={cn("size-2 shrink-0 rounded-full", selected.indicatorClassName)} />
+        ) : null}
+        <span className="truncate">{selected?.label ?? placeholder}</span>
+      </span>
       <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition", open && "rotate-180")} />
     </button>
     {open && typeof document !== "undefined" ? createPortal(
       <div className="fixed z-[100] max-h-60 overflow-y-auto rounded-lg border border-border bg-background p-1.5 shadow-xl" data-custom-select role="listbox" style={{ top: position.top, left: position.left, width: Math.max(position.width, menuMinWidth) }}>
-        {options.map((option) => <button aria-selected={option.value === value} className={cn("flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm transition hover:bg-muted", option.value === value && "bg-muted font-medium")} key={option.value} onClick={() => { onChange(option.value); setOpen(false); }} role="option" type="button"><span className="truncate">{option.label}</span>{option.value === value ? <Check className="size-4 shrink-0" /> : null}</button>)}
+        {options.map((option) => <button aria-selected={option.value === value} className={cn("flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left text-sm transition hover:bg-muted", option.value === value && "bg-muted font-medium")} key={option.value} onClick={() => { onChange(option.value); setOpen(false); }} role="option" type="button"><span className="flex min-w-0 items-center gap-2.5"><span className={cn("size-2 shrink-0 rounded-full", option.indicatorClassName ?? "bg-muted-foreground/40")} /><span className="truncate">{option.label}</span></span>{option.value === value ? <Check className="size-4 shrink-0" /> : null}</button>)}
       </div>, document.body) : null}
   </div>;
 }

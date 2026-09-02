@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   getDateKeyInTimeZone,
   getTimePartsInTimeZone,
+  zonedDateTimeToUtc,
 } from '../attendance/utils/timezone';
 import {
   AllRawPunchesQueryDto,
@@ -23,6 +24,8 @@ import {
 
 const DEFAULT_LATE_THRESHOLD = '21:15';
 const DEFAULT_OVERTIME_MINUTES = 480;
+const GRACE_MINUTES = 15;
+type ReportAttendanceStatus = AttendanceStatus | 'NOT_STARTED';
 const PRESENT_STATUSES = new Set<AttendanceStatus>([
   AttendanceStatus.PRESENT,
   AttendanceStatus.LATE,
@@ -53,7 +56,7 @@ type AttendanceExportRow = {
   firstCheckIn: string | null;
   lastCheckOut: string | null;
   workingMinutes: number;
-  status: AttendanceStatus;
+  status: ReportAttendanceStatus;
 };
 
 @Injectable()
@@ -71,30 +74,46 @@ export class ReportsService {
       ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
       ...(scope.employeeId ? { id: scope.employeeId } : {}),
     };
-    const employees = await this.prisma.employee.findMany({
-      where: employeeWhere,
-      include: {
-        department: true,
-        organization: true,
-      },
-      orderBy: {
-        employeeCode: 'asc',
-      },
-    });
-    const dailyRecords = await this.prisma.dailyAttendance.findMany({
-      where: {
-        ...this.createAttendanceWhere(scope),
-        date,
-      },
-    });
+    const [employees, dailyRecords, databaseNow] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: employeeWhere,
+        include: {
+          department: true,
+          organization: true,
+          shiftAssignments: {
+            where: {
+              effectiveFrom: { lte: date },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }],
+            },
+            include: { shift: true },
+            orderBy: { effectiveFrom: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: {
+          employeeCode: 'asc',
+        },
+      }),
+      this.prisma.dailyAttendance.findMany({
+        where: {
+          ...this.createAttendanceWhere(scope),
+          date,
+        },
+      }),
+      this.prisma.databaseNow(),
+    ]);
     const recordsByEmployee = new Map(
       dailyRecords.map((record) => [record.employeeId, record]),
     );
     const rows = employees.map((employee) => {
       const record = recordsByEmployee.get(employee.id);
-      const status = record
-        ? this.getEffectiveAttendanceStatus(record)
-        : AttendanceStatus.ABSENT;
+      const status = this.resolveReportAttendanceStatus(
+        record,
+        dateKey,
+        employee.organization.timezone || 'Asia/Karachi',
+        databaseNow,
+        employee.shiftAssignments,
+      );
 
       return {
         employeeId: employee.id,
@@ -121,26 +140,37 @@ export class ReportsService {
     const monthKey = await this.normalizeMonthKey(query.month);
     const { from, to } = this.getMonthWindow(monthKey);
     const scope = this.resolveScope(user, query.organizationId);
-    const records = await this.prisma.dailyAttendance.findMany({
-      where: {
-        ...this.createAttendanceWhere(scope),
-        date: {
-          gte: from,
-          lt: to,
-        },
-      },
-      include: {
-        employee: {
-          include: {
-            department: true,
+    const [records, databaseNow] = await Promise.all([
+      this.prisma.dailyAttendance.findMany({
+        where: {
+          ...this.createAttendanceWhere(scope),
+          date: {
+            gte: from,
+            lt: to,
           },
         },
-        organization: true,
-      },
-      orderBy: {
-        date: 'asc',
-      },
-    });
+        include: {
+          employee: {
+            include: {
+              department: true,
+              shiftAssignments: {
+                where: {
+                  effectiveFrom: { lt: to },
+                  OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
+                },
+                include: { shift: true },
+                orderBy: { effectiveFrom: 'desc' },
+              },
+            },
+          },
+          organization: true,
+        },
+        orderBy: {
+          date: 'asc',
+        },
+      }),
+      this.prisma.databaseNow(),
+    ]);
     const rowsByEmployee = new Map<
       string,
       {
@@ -159,7 +189,14 @@ export class ReportsService {
     >();
 
     for (const record of records) {
-      const status = this.getEffectiveAttendanceStatus(record);
+      const status = this.resolveReportAttendanceStatus(
+        record,
+        this.toDateKey(record.date),
+        record.organization.timezone || 'Asia/Karachi',
+        databaseNow,
+        record.employee.shiftAssignments,
+      );
+      if (status === 'NOT_STARTED') continue;
       const current = rowsByEmployee.get(record.employeeId) ?? {
         employeeId: record.employeeId,
         employeeCode: displayEmployeeCode(record.employee),
@@ -223,9 +260,10 @@ export class ReportsService {
 
   async getPayrollReport(user: CurrentUser, query: MonthlyReportQueryDto) {
     const scope = this.resolveScope(user, query.organizationId);
-    const currentShiftDateKey = await this.getCurrentShiftDateKey(
-      scope.organizationId,
-    );
+    const [currentShiftDateKey, databaseNow] = await Promise.all([
+      this.getCurrentShiftDateKey(scope.organizationId),
+      this.prisma.databaseNow(),
+    ]);
     const month = query.month
       ? await this.normalizeMonthKey(query.month)
       : this.getPayrollCycleMonth(currentShiftDateKey);
@@ -247,7 +285,18 @@ export class ReportsService {
             : {}),
           ...(scope.employeeId ? { id: scope.employeeId } : {}),
         },
-        include: { department: true },
+        include: {
+          department: true,
+          organization: true,
+          shiftAssignments: {
+            where: {
+              effectiveFrom: { lt: to },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
+            },
+            include: { shift: true },
+            orderBy: { effectiveFrom: 'desc' },
+          },
+        },
         orderBy: { employeeCode: 'asc' },
       }),
       this.prisma.dailyAttendance.findMany({
@@ -273,6 +322,7 @@ export class ReportsService {
       let halfDays = 0;
       let presentDays = 0;
       let lateDays = 0;
+      let assessedWorkingDays = 0;
       const attendanceDetails: Array<{
         date: string;
         day: string;
@@ -283,7 +333,16 @@ export class ReportsService {
         const record = attendanceByEmployeeDate.get(
           `${employee.id}:${dateKey}`,
         );
-        const status = record?.statusOverride ?? record?.status;
+        const status = this.resolveReportAttendanceStatus(
+          record,
+          dateKey,
+          employee.organization.timezone || 'Asia/Karachi',
+          databaseNow,
+          employee.shiftAssignments,
+        );
+
+        if (status === 'NOT_STARTED') continue;
+        assessedWorkingDays += 1;
 
         if (status === AttendanceStatus.LATE) lateDays += 1;
 
@@ -323,7 +382,7 @@ export class ReportsService {
         monthlySalary: this.roundMoney(monthlySalary),
         payrollDays,
         workingDays: workingDateKeys.length,
-        assessedWorkingDays: assessedDateKeys.length,
+        assessedWorkingDays,
         dailyRate: this.roundMoney(dailyRate),
         presentDays,
         lateDays,
@@ -371,26 +430,37 @@ export class ReportsService {
 
     const scope = this.resolveScope(user, query.organizationId);
     const { from, to } = await this.normalizeRange(query.from, query.to);
-    const employees = await this.prisma.employee.findMany({
-      where: {
-        isActive: true,
-        ...(scope.organizationId
-          ? { organizationId: scope.organizationId }
-          : {}),
-        ...(scope.employeeId ? { id: scope.employeeId } : {}),
-      },
-      include: {
-        department: true,
-        organization: true,
-      },
-      orderBy: { employeeCode: 'asc' },
-    });
-    const records = await this.prisma.dailyAttendance.findMany({
-      where: {
-        ...this.createAttendanceWhere(scope),
-        date: { gte: from, lt: to },
-      },
-    });
+    const [employees, records, databaseNow] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: {
+          isActive: true,
+          ...(scope.organizationId
+            ? { organizationId: scope.organizationId }
+            : {}),
+          ...(scope.employeeId ? { id: scope.employeeId } : {}),
+        },
+        include: {
+          department: true,
+          organization: true,
+          shiftAssignments: {
+            where: {
+              effectiveFrom: { lt: to },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
+            },
+            include: { shift: true },
+            orderBy: { effectiveFrom: 'desc' },
+          },
+        },
+        orderBy: { employeeCode: 'asc' },
+      }),
+      this.prisma.dailyAttendance.findMany({
+        where: {
+          ...this.createAttendanceWhere(scope),
+          date: { gte: from, lt: to },
+        },
+      }),
+      this.prisma.databaseNow(),
+    ]);
     const recordsByEmployeeDate = new Map(
       records.map((record) => [
         `${record.employeeId}:${this.toDateKey(record.date)}`,
@@ -415,8 +485,13 @@ export class ReportsService {
           firstCheckIn: record?.firstCheckIn?.toISOString() ?? null,
           lastCheckOut: record?.lastCheckOut?.toISOString() ?? null,
           workingMinutes: record?.workingMinutes ?? 0,
-          status:
-            record?.statusOverride ?? record?.status ?? AttendanceStatus.ABSENT,
+          status: this.resolveReportAttendanceStatus(
+            record,
+            dateKey,
+            employee.organization.timezone || 'Asia/Karachi',
+            databaseNow,
+            employee.shiftAssignments,
+          ),
         });
       }
     }
@@ -726,7 +801,7 @@ export class ReportsService {
   async getAnalytics(user: CurrentUser, query: DateRangeReportQueryDto) {
     const scope = this.resolveScope(user, query.organizationId);
     const { from, to } = await this.normalizeRange(query.from, query.to);
-    const [records, employees] = await Promise.all([
+    const [records, employees, databaseNow] = await Promise.all([
       this.getRangeRecords(scope, from, to),
       this.prisma.employee.findMany({
         where: {
@@ -736,8 +811,20 @@ export class ReportsService {
             : {}),
           ...(scope.employeeId ? { id: scope.employeeId } : {}),
         },
-        include: { department: true },
+        include: {
+          department: true,
+          organization: true,
+          shiftAssignments: {
+            where: {
+              effectiveFrom: { lt: to },
+              OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
+            },
+            include: { shift: true },
+            orderBy: { effectiveFrom: 'desc' },
+          },
+        },
       }),
+      this.prisma.databaseNow(),
     ]);
     const trends = new Map<
       string,
@@ -765,31 +852,54 @@ export class ReportsService {
         rows: number;
       }
     >();
-    let daysInRange = 0;
+    const employeeById = new Map(
+      employees.map((employee) => [employee.id, employee]),
+    );
+    const recordByEmployeeDate = new Map(
+      records.map((record) => [
+        `${record.employeeId}:${this.toDateKey(record.date)}`,
+        record,
+      ]),
+    );
+    const assessedEmployeesByDate = new Map<string, number>();
+    const assessedEmployeeDaysByDepartment = new Map<string, number>();
 
     for (let date = from; date < to; date = this.addDays(date, 1)) {
       const dateKey = this.toDateKey(date);
+      let assessedEmployees = 0;
+      for (const employee of employees) {
+        const record = recordByEmployeeDate.get(`${employee.id}:${dateKey}`);
+        const status = this.resolveReportAttendanceStatus(
+          record,
+          dateKey,
+          employee.organization.timezone || 'Asia/Karachi',
+          databaseNow,
+          employee.shiftAssignments,
+        );
+        if (status === 'NOT_STARTED') continue;
+
+        assessedEmployees += 1;
+        const departmentName = employee.department?.name ?? 'Unassigned';
+        assessedEmployeeDaysByDepartment.set(
+          departmentName,
+          (assessedEmployeeDaysByDepartment.get(departmentName) ?? 0) + 1,
+        );
+      }
+      assessedEmployeesByDate.set(dateKey, assessedEmployees);
       trends.set(dateKey, {
         date: dateKey,
         present: 0,
-        absent: employees.length,
+        absent: assessedEmployees,
         late: 0,
         overtimeHours: 0,
         averageWorkingHours: 0,
         totalWorkingMinutes: 0,
         rows: 0,
       });
-      daysInRange += 1;
     }
-
-    const employeeCountByDepartment = new Map<string, number>();
 
     for (const employee of employees) {
       const departmentName = employee.department?.name ?? 'Unassigned';
-      employeeCountByDepartment.set(
-        departmentName,
-        (employeeCountByDepartment.get(departmentName) ?? 0) + 1,
-      );
       departments.set(departmentName, {
         department: departmentName,
         present: 0,
@@ -804,7 +914,18 @@ export class ReportsService {
 
     for (const record of records) {
       const dateKey = this.toDateKey(record.date);
-      const departmentName = record.employee.department?.name ?? 'Unassigned';
+      const employee = employeeById.get(record.employeeId);
+      if (!employee) continue;
+      const status = this.resolveReportAttendanceStatus(
+        record,
+        dateKey,
+        employee.organization.timezone || 'Asia/Karachi',
+        databaseNow,
+        employee.shiftAssignments,
+      );
+      if (status === 'NOT_STARTED') continue;
+
+      const departmentName = employee.department?.name ?? 'Unassigned';
       const trend = trends.get(dateKey) ?? {
         date: dateKey,
         present: 0,
@@ -826,7 +947,6 @@ export class ReportsService {
         rows: 0,
       };
 
-      const status = this.getEffectiveAttendanceStatus(record);
       this.applyAnalyticsRecord(trend, status, record.workingMinutes);
       this.applyAnalyticsRecord(department, status, record.workingMinutes);
       trends.set(dateKey, trend);
@@ -834,15 +954,17 @@ export class ReportsService {
     }
 
     for (const trend of trends.values()) {
-      trend.absent = Math.max(0, employees.length - trend.present);
+      trend.absent = Math.max(
+        0,
+        (assessedEmployeesByDate.get(trend.date) ?? 0) - trend.present,
+      );
     }
 
     for (const department of departments.values()) {
-      const employeeCount =
-        employeeCountByDepartment.get(department.department) ?? 0;
       department.absent = Math.max(
         0,
-        employeeCount * daysInRange - department.present,
+        (assessedEmployeeDaysByDepartment.get(department.department) ?? 0) -
+          department.present,
       );
     }
 
@@ -992,13 +1114,76 @@ export class ReportsService {
     return dateKey;
   }
 
+  private resolveReportAttendanceStatus(
+    record: {
+      status: AttendanceStatus;
+      statusOverride: AttendanceStatus | null;
+      firstCheckIn: Date | null;
+      lastCheckOut: Date | null;
+      graceDeadline: Date | null;
+    } | undefined,
+    dateKey: string,
+    timezone: string,
+    databaseNow: Date,
+    assignments: Array<{
+      effectiveFrom: Date;
+      effectiveTo: Date | null;
+      shift: { startMinutes: number };
+    }>,
+  ): ReportAttendanceStatus {
+    if (record?.statusOverride) {
+      return this.getEffectiveAttendanceStatus(record);
+    }
+
+    if (
+      record &&
+      this.getEffectiveAttendanceStatus(record) !== AttendanceStatus.ABSENT
+    ) {
+      return this.getEffectiveAttendanceStatus(record);
+    }
+
+    const currentDateKey = getDateKeyInTimeZone(databaseNow, timezone);
+    if (dateKey > currentDateKey) return 'NOT_STARTED';
+    if (dateKey < currentDateKey) return AttendanceStatus.ABSENT;
+
+    const date = this.toDatabaseDate(dateKey);
+    const assignment = assignments.find(
+      (item) =>
+        item.effectiveFrom <= date &&
+        (!item.effectiveTo || item.effectiveTo >= date),
+    );
+    const graceDeadline =
+      record?.graceDeadline ??
+      (assignment
+        ? new Date(
+            zonedDateTimeToUtc(
+              dateKey,
+              assignment.shift.startMinutes,
+              timezone,
+            ).getTime() +
+              GRACE_MINUTES * 60_000,
+          )
+        : null);
+
+    // Without a valid shift there is no reliable point at which absence can
+    // begin, so avoid charging an absence for the current date.
+    if (!graceDeadline) return 'NOT_STARTED';
+
+    const graceMinuteEnd = new Date(graceDeadline.getTime() + 60_000 - 1);
+    return databaseNow <= graceMinuteEnd
+      ? 'NOT_STARTED'
+      : AttendanceStatus.ABSENT;
+  }
+
   private summarizeDailyRows(
-    rows: Array<{ status: AttendanceStatus; workingMinutes: number }>,
+    rows: Array<{ status: ReportAttendanceStatus; workingMinutes: number }>,
   ) {
     return {
       totalEmployees: rows.length,
-      presentCount: rows.filter((row) => PRESENT_STATUSES.has(row.status))
-        .length,
+      presentCount: rows.filter(
+        (row) =>
+          row.status !== 'NOT_STARTED' && PRESENT_STATUSES.has(row.status),
+      ).length,
       absentCount: rows.filter((row) => row.status === AttendanceStatus.ABSENT)
         .length,
       lateCount: rows.filter(

@@ -12,6 +12,7 @@ import {
   UsersRound,
   FlaskConical,
   KeyRound,
+  Inbox,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/raw-data", label: "Raw Data", icon: Rows3 },
   // { href: "/testing-names", label: "Testing Names", icon: FlaskConical },
   { href: "/email-password", label: "Email / Password", icon: KeyRound },
+  { href: "/requests", label: "Requests", icon: Inbox },
 ];
 
 type AppShellProps = {

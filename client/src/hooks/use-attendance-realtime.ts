@@ -25,7 +25,14 @@ export function useAttendanceRealtime() {
   useEffect(() => {
     const socket = io(getRealtimeUrl(), {
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      // Start with polling so development proxies and restrictive networks do
+      // not log a failed websocket upgrade before Socket.IO can connect.
+      // Socket.IO will still upgrade to websocket when the connection allows it.
+      transports: ["polling", "websocket"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 

@@ -21,6 +21,9 @@ export function QueryProvider({ children }: QueryProviderProps) {
             retry: 1,
             staleTime: 120_000,
             gcTime: 10 * 60_000,
+            // Preserve the current screen while a changed filter, date, or
+            // background refresh fetches its next result.
+            placeholderData: (previousData: unknown) => previousData,
           },
         },
       }),

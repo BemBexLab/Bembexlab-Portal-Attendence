@@ -21,6 +21,7 @@ const border = {
 };
 
 const statusColors: Record<AttendanceStatus, { fill: string; font: string }> = {
+  NOT_STARTED: { fill: "FFF3F4F6", font: "FF6B7280" },
   PRESENT: { fill: "FFD1FAE5", font: "FF047857" },
   ABSENT: { fill: "FFFEE2E2", font: "FFDC2626" },
   LATE: { fill: "FFFEF3C7", font: "FFB45309" },

@@ -1,4 +1,5 @@
 export type AttendanceStatus =
+  | "NOT_STARTED"
   | "PRESENT"
   | "ABSENT"
   | "LATE"
@@ -35,6 +36,33 @@ export type EmployeeCredential = {
   email: string | null;
   hasPassword: boolean;
   loginActive: boolean;
+};
+
+export type EmployeeRequest = {
+  id: string;
+  source: "EMPLOYEE_REQUEST" | "ATTENDANCE_CORRECTION";
+  employeeId: string;
+  employeeCode: string;
+  employee: string;
+  kind: "LEAVE" | "REMOTE_WORK" | "CORRECTION";
+  complaintType:
+    | "INCORRECT_CHECK_IN"
+    | "INCORRECT_CHECK_OUT"
+    | "INCORRECT_STATUS"
+    | "MISSING_ATTENDANCE"
+    | "OTHER"
+    | null;
+  expectedCheckIn: string | null;
+  expectedCheckOut: string | null;
+  leaveCategory: "ANNUAL_LEAVE" | "SICK_LEAVE" | "CASUAL_LEAVE" | "UNPAID_LEAVE" | null;
+  fromDate: string;
+  toDate: string;
+  reason: string;
+  note: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  submittedAt: string;
+  updatedAt: string;
+  decidedAt: string | null;
 };
 
 export type Shift = {

@@ -2,6 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import type { AttendanceStatus, DeviceStatus } from "@/types/attendance";
 
 export function AttendanceStatusBadge({ status }: { status: AttendanceStatus }) {
+  if (status === "NOT_STARTED") {
+    return <Badge>Not started</Badge>;
+  }
+
   if (status === "PRESENT") {
     return <Badge tone="green">Present</Badge>;
   }

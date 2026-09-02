@@ -40,6 +40,40 @@ enum AttendanceStatus {
   REMOTE
 }
 
+enum RequestKind {
+  LEAVE
+  REMOTE_WORK
+  CORRECTION
+}
+
+enum LeaveCategory {
+  ANNUAL_LEAVE
+  SICK_LEAVE
+  CASUAL_LEAVE
+  UNPAID_LEAVE
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ComplaintType {
+  INCORRECT_CHECK_IN
+  INCORRECT_CHECK_OUT
+  INCORRECT_STATUS
+  MISSING_ATTENDANCE
+  OTHER
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Organization {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String   @db.VarChar(160)
@@ -47,13 +81,15 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users            User[]
-  departments      Department[]
-  employees        Employee[]
-  zktecoDevices    ZktecoDevice[]
-  attendanceLogs   AttendanceLog[]
-  dailyAttendances DailyAttendance[]
-  shifts           Shift[]
+  users                 User[]
+  departments           Department[]
+  employees             Employee[]
+  zktecoDevices         ZktecoDevice[]
+  attendanceLogs        AttendanceLog[]
+  dailyAttendances      DailyAttendance[]
+  shifts                Shift[]
+  employeeRequests      EmployeeRequest[]
+  attendanceCorrections AttendanceCorrection[]
 
   @@index([name])
   @@map("organizations")
@@ -71,8 +107,10 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee?     @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  organization        Organization?          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee            Employee?              @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  reviewedRequests    EmployeeRequest[]      @relation("EmployeeRequestReviewer")
+  reviewedCorrections AttendanceCorrection[] @relation("AttendanceCorrectionReviewer")
 
   @@index([organizationId, role])
   @@index([role])
@@ -107,12 +145,14 @@ model Employee {
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  department       Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  user             User?
-  attendanceLogs   AttendanceLog[]
-  dailyAttendances DailyAttendance[]
-  shiftAssignments EmployeeShiftAssignment[]
+  organization          Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  department            Department?               @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  user                  User?
+  attendanceLogs        AttendanceLog[]
+  dailyAttendances      DailyAttendance[]
+  shiftAssignments      EmployeeShiftAssignment[]
+  requests              EmployeeRequest[]
+  attendanceCorrections AttendanceCorrection[]
 
   @@unique([organizationId, employeeCode])
   @@unique([organizationId, deviceUserId])
@@ -140,18 +180,68 @@ model ZktecoDevice {
   @@map("zkteco_devices")
 }
 
-model AttendanceLog {
-  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId   String           @map("organization_id") @db.Uuid
-  employeeId       String           @map("employee_id") @db.Uuid
-  deviceId         String?          @map("device_id") @db.Uuid
-  deviceNameSnapshot String?        @map("device_name_snapshot") @db.VarChar(120)
-  punchTime        DateTime         @map("punch_time") @db.Timestamptz(6)
-  verificationType VerificationType @default(UNKNOWN) @map("verification_type")
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+model EmployeeRequest {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  employeeId     String         @map("employee_id") @db.Uuid
+  kind           RequestKind
+  leaveCategory  LeaveCategory? @map("leave_category")
+  fromDate       DateTime       @map("from_date") @db.Date
+  toDate         DateTime       @map("to_date") @db.Date
+  reason         String         @db.Text
+  note           String?        @db.Text
+  status         RequestStatus  @default(PENDING)
+  submittedAt    DateTime       @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  decidedAt      DateTime?      @map("decided_at") @db.Timestamptz(6)
+  decidedBy      String?        @map("decided_by") @db.Uuid
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  reviewer     User?        @relation("EmployeeRequestReviewer", fields: [decidedBy], references: [id])
+
+  @@index([organizationId, status, submittedAt])
+  @@index([employeeId, fromDate])
+  @@map("employee_requests")
+}
+
+model AttendanceCorrection {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String           @map("organization_id") @db.Uuid
+  employeeId        String           @map("employee_id") @db.Uuid
+  dailyAttendanceId String?          @map("daily_attendance_id") @db.Uuid
+  complaintType     ComplaintType    @map("complaint_type")
+  expectedCheckIn   DateTime?        @map("expected_check_in") @db.Time(6)
+  expectedCheckOut  DateTime?        @map("expected_check_out") @db.Time(6)
+  description       String           @db.Text
+  status            CorrectionStatus @default(PENDING)
+  submittedAt       DateTime         @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  updatedAt         DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  decidedAt         DateTime?        @map("decided_at") @db.Timestamptz(6)
+  decidedBy         String?          @map("decided_by") @db.Uuid
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  dailyAttendance DailyAttendance? @relation(fields: [dailyAttendanceId], references: [id], onDelete: SetNull)
+  reviewer        User?            @relation("AttendanceCorrectionReviewer", fields: [decidedBy], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, submittedAt])
+  @@index([employeeId, submittedAt])
+  @@map("attendance_corrections")
+}
+
+model AttendanceLog {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String           @map("organization_id") @db.Uuid
+  employeeId         String           @map("employee_id") @db.Uuid
+  deviceId           String?          @map("device_id") @db.Uuid
+  deviceNameSnapshot String?          @map("device_name_snapshot") @db.VarChar(120)
+  punchTime          DateTime         @map("punch_time") @db.Timestamptz(6)
+  verificationType   VerificationType @default(UNKNOWN) @map("verification_type")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   device       ZktecoDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@unique([employeeId, deviceId, punchTime, verificationType], map: "attendance_logs_employee_device_punch_verification_key")
@@ -177,14 +267,15 @@ model DailyAttendance {
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee          Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  shiftId           String?      @map("shift_id") @db.Uuid
-  shift             Shift?       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  shiftNameSnapshot String?      @map("shift_name_snapshot") @db.VarChar(100)
-  scheduledStart    DateTime?    @map("scheduled_start") @db.Timestamptz(6)
-  scheduledEnd      DateTime?    @map("scheduled_end") @db.Timestamptz(6)
-  graceDeadline     DateTime?    @map("grace_deadline") @db.Timestamptz(6)
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee              Employee               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  shiftId               String?                @map("shift_id") @db.Uuid
+  shift                 Shift?                 @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  attendanceCorrections AttendanceCorrection[]
+  shiftNameSnapshot     String?                @map("shift_name_snapshot") @db.VarChar(100)
+  scheduledStart        DateTime?              @map("scheduled_start") @db.Timestamptz(6)
+  scheduledEnd          DateTime?              @map("scheduled_end") @db.Timestamptz(6)
+  graceDeadline         DateTime?              @map("grace_deadline") @db.Timestamptz(6)
 
   @@unique([employeeId, date])
   @@index([organizationId, date])

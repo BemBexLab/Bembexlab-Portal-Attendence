@@ -17,6 +17,7 @@ import {
   getDirectDeviceAttendance,
   getEmployees,
   getEmployeeCredentials,
+  getEmployeeRequests,
   syncDeviceAttendance,
   testDevice,
   updateAttendanceStatus,
@@ -26,6 +27,7 @@ import {
   updateEmployeeStatus,
   updateEmployeeSalary,
   updateEmployeeCredentials,
+  updateEmployeeRequestStatus,
   getShifts,
   createShift,
   updateShift,
@@ -55,6 +57,7 @@ export function useAttendanceRows(date?: string) {
   return useQuery({
     queryKey: [...attendanceKeys.attendance, date ?? "current"],
     queryFn: () => getAttendanceRows(date),
+    refetchInterval: 60_000,
   });
 }
 
@@ -67,6 +70,7 @@ export function useAttendanceRowsForRange(
     queryKey: [...attendanceKeys.attendance, "range", from, to],
     queryFn: () => getAttendanceRowsForRange(from, to),
     enabled: enabled && Boolean(from && to),
+    refetchInterval: enabled ? 60_000 : false,
   });
 }
 
@@ -159,6 +163,31 @@ export function useUpdateEmployeeCredentials() {
       void queryClient.invalidateQueries({
         queryKey: ["employees", "credentials"],
       });
+    },
+  });
+}
+
+export function useEmployeeRequests(status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED") {
+  return useQuery({
+    queryKey: ["requests", status ?? "all"],
+    queryFn: () => getEmployeeRequests(status),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useUpdateEmployeeRequestStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateEmployeeRequestStatus,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["requests"] }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.scheduledStatuses }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
     },
   });
 }
