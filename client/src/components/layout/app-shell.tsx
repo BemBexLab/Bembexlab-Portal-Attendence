@@ -27,7 +27,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { useRealtimeStore } from "@/stores/realtime-store";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/shifts", label: "Shifts", icon: Clock4 },
   { href: "/employees", label: "Employees", icon: UsersRound },
   { href: "/attendance", label: "Attendance", icon: CalendarDays },

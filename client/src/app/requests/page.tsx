@@ -81,13 +81,15 @@ export default function RequestsPage() {
 
   const filteredRequests = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return (requests.data ?? []).filter(
-      (request) =>
-        !term ||
-        request.employee.toLowerCase().includes(term) ||
-        request.employeeCode.toLowerCase().includes(term) ||
-        request.reason.toLowerCase().includes(term),
-    );
+    return (requests.data ?? [])
+      .filter(
+        (request) =>
+          !term ||
+          request.employee.toLowerCase().includes(term) ||
+          request.employeeCode.toLowerCase().includes(term) ||
+          request.reason.toLowerCase().includes(term),
+      )
+      .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
   }, [requests.data, search]);
 
   const changeStatus = async (
