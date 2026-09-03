@@ -4,12 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   getDailyReport,
+  getDeductionsReport,
   getLateArrivalsReport,
   getMonthlyReport,
   getOvertimeReport,
-  getReportAnalytics,
   getPayrollReport,
   getRawPunches,
+  getReportAnalytics,
 } from "@/services/report-service";
 
 export const reportKeys = {
@@ -65,6 +66,14 @@ export function usePayrollReport(month?: string, enabled = true) {
   return useQuery({
     queryKey: reportKeys.payroll(month),
     queryFn: () => getPayrollReport(month),
+    enabled,
+  });
+}
+
+export function useDeductionsReport(month?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["reports", "deductions", month ?? "current"],
+    queryFn: () => getDeductionsReport(month),
     enabled,
   });
 }

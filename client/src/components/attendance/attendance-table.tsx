@@ -231,7 +231,9 @@ export function AttendanceTable() {
         const halfDays = monthlyDates.reduce(
           (total, date) =>
             total +
-            (employee.attendanceByDate.get(date)?.status === "HALF_DAY"
+            (["LATE", "HALF_DAY"].includes(
+              employee.attendanceByDate.get(date)?.status ?? "",
+            )
               ? 1
               : 0),
           0,
@@ -451,24 +453,24 @@ export function AttendanceTable() {
                   >
                     Name
                   </th>
-                  <th
-                    className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
-                    rowSpan={2}
-                  >
-                    Total Absent
-                  </th>
-                  <th
-                    className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
-                    rowSpan={2}
-                  >
-                    Total Half Days
-                  </th>
-                  <th
-                    className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
-                    rowSpan={2}
-                  >
-                    Deduction Days
-                  </th>
+                   <th
+                     className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
+                     rowSpan={2}
+                   >
+                     Total Absent
+                   </th>
+                   <th
+                     className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
+                     rowSpan={2}
+                   >
+                     Total Half Days
+                   </th>
+                   <th
+                     className="w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 text-center font-medium uppercase"
+                     rowSpan={2}
+                   >
+                     Deduction Days
+                   </th>
                   {monthlyDates.map((date) => {
                     const heading = formatCycleDate(date);
                     return (

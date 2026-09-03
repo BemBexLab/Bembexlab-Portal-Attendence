@@ -9,7 +9,6 @@ import type { CurrentUser } from '../auth/types/current-user.type';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   getDateKeyInTimeZone,
-  getTimePartsInTimeZone,
   zonedDateTimeToUtc,
 } from '../attendance/utils/timezone';
 import {
@@ -317,11 +316,13 @@ export class ReportsService {
     const payrollDays = Math.round(
       (to.getTime() - from.getTime()) / 86_400_000,
     );
+    const employeeOrganizationIds = new Map(
+      employees.map((employee) => [employee.id, employee.organizationId]),
+    );
     const rows = employees.map((employee) => {
       let absentDays = 0;
       let halfDays = 0;
       let presentDays = 0;
-      let lateDays = 0;
       let assessedWorkingDays = 0;
       const attendanceDetails: Array<{
         date: string;
@@ -344,8 +345,6 @@ export class ReportsService {
         if (status === 'NOT_STARTED') continue;
         assessedWorkingDays += 1;
 
-        if (status === AttendanceStatus.LATE) lateDays += 1;
-
         if (!status || status === AttendanceStatus.ABSENT) {
           absentDays += 1;
           attendanceDetails.push({
@@ -353,7 +352,10 @@ export class ReportsService {
             day: this.getWeekdayName(dateKey),
             status: 'ABSENT',
           });
-        } else if (status === AttendanceStatus.HALF_DAY) {
+        } else if (
+          status === AttendanceStatus.LATE ||
+          status === AttendanceStatus.HALF_DAY
+        ) {
           halfDays += 1;
           attendanceDetails.push({
             date: dateKey,
@@ -385,7 +387,6 @@ export class ReportsService {
         assessedWorkingDays,
         dailyRate: this.roundMoney(dailyRate),
         presentDays,
-        lateDays,
         absentDays,
         halfDays,
         halfDayDeductionDays,
@@ -395,6 +396,37 @@ export class ReportsService {
         attendanceDetails,
       };
     });
+
+    const deductionRows = rows.map((row) => ({
+      organizationId: employeeOrganizationIds.get(row.employeeId) ?? '',
+      employeeId: row.employeeId,
+      payrollCycleMonth: month,
+      lateDays: 0,
+      halfDays: row.halfDays,
+      absentDays: row.absentDays,
+      lateHalfDayDeductionDays: row.halfDayDeductionDays,
+      totalDeductionDays: row.totalDeductionDays,
+      monthlySalary: row.monthlySalary,
+      payrollDays: row.payrollDays,
+      dailyRate: row.dailyRate,
+      deductionAmount: row.deductionAmount,
+      calculatedThrough:
+        attendanceCutoff > from
+          ? this.toDateKey(this.addDays(attendanceCutoff, -1))
+          : null,
+    }));
+
+    if (deductionRows.length > 0) {
+      await this.prisma.$transaction([
+        this.prisma.deduction.deleteMany({
+          where: {
+            payrollCycleMonth: month,
+            employeeId: { in: rows.map((row) => row.employeeId) },
+          },
+        }),
+        this.prisma.deduction.createMany({ data: deductionRows }),
+      ]);
+    }
 
     return {
       month,
@@ -406,7 +438,7 @@ export class ReportsService {
           : null,
       workingDays: workingDateKeys.length,
       payrollDays,
-      rule: 'Payroll runs every calendar day from the 25th through the following month’s 25th. Saturdays and Sundays are paid off-days and never create absence deductions. Each absent weekday deducts 1 calendar-day salary; every 3 weekday half days deduct 1 calendar-day salary.',
+      rule: "Payroll runs every calendar day from the 25th through the following month's 25th. Saturdays and Sundays are paid off-days and never create deductions. A late arrival is a half day. Each absent weekday deducts 1 calendar-day salary; every 3 half days deduct 1 calendar-day salary.",
       summary: {
         employees: rows.length,
         grossSalary: this.roundMoney(
@@ -417,6 +449,80 @@ export class ReportsService {
         ),
         payableSalary: this.roundMoney(
           rows.reduce((total, row) => total + row.payableSalary, 0),
+        ),
+      },
+      rows,
+    };
+  }
+
+  async getDeductionsReport(user: CurrentUser, query: MonthlyReportQueryDto) {
+    const scope = this.resolveScope(user, query.organizationId);
+    const month = query.month
+      ? await this.normalizeMonthKey(query.month)
+      : this.getPayrollCycleMonth(
+          await this.getCurrentShiftDateKey(scope.organizationId),
+        );
+
+    const deductions = await this.prisma.deduction.findMany({
+      where: {
+        ...(scope.organizationId
+          ? { organizationId: scope.organizationId }
+          : {}),
+        ...(scope.employeeId ? { employeeId: scope.employeeId } : {}),
+        payrollCycleMonth: month,
+      },
+      include: {
+        employee: {
+          include: {
+            department: true,
+          },
+        },
+      },
+      orderBy: {
+        employee: {
+          name: 'asc',
+        },
+      },
+    });
+
+    const rows = deductions.map((deduction) => ({
+      employeeId: deduction.employeeId,
+      employeeCode: displayEmployeeCode({
+        employeeCode: deduction.employee.employeeCode,
+        deviceUserId: deduction.employee.deviceUserId,
+      }),
+      employee: deduction.employee.name,
+      department: deduction.employee.department?.name ?? 'Unassigned',
+      payrollCycleMonth: deduction.payrollCycleMonth,
+      // Older saved rows may still have late days in their legacy column.
+      // Present them as the single half-day payroll category.
+      halfDays: deduction.halfDays + deduction.lateDays,
+      absentDays: deduction.absentDays,
+      halfDayDeductionDays: deduction.lateHalfDayDeductionDays,
+      totalDeductionDays: deduction.totalDeductionDays,
+      monthlySalary: Number(deduction.monthlySalary),
+      payrollDays: deduction.payrollDays,
+      dailyRate: Number(deduction.dailyRate),
+      deductionAmount: Number(deduction.deductionAmount),
+      calculatedThrough: deduction.calculatedThrough,
+    }));
+
+    return {
+      month,
+      summary: {
+        employees: rows.length,
+        totalHalfDays: rows.reduce((total, row) => total + row.halfDays, 0),
+        totalAbsentDays: rows.reduce((total, row) => total + row.absentDays, 0),
+        totalHalfDayDeductionDays: rows.reduce(
+          (total, row) => total + row.halfDayDeductionDays,
+          0,
+        ),
+        totalDeductionDays: rows.reduce(
+          (total, row) => total + row.totalDeductionDays,
+          0,
+        ),
+        totalDeductionAmount: this.roundMoney(
+          rows.reduce((total, row) => total + row.deductionAmount, 0),
         ),
       },
       rows,
@@ -640,7 +746,10 @@ export class ReportsService {
             record.employee.deviceUserId ?? record.employee.employeeCode,
           employee: record.employee.name,
           department: record.employee.department?.name ?? 'Unassigned',
-          device: record.device?.name ?? record.deviceNameSnapshot ?? 'Removed device',
+          device:
+            record.device?.name ??
+            record.deviceNameSnapshot ??
+            'Removed device',
           punchTime: record.punchTime.toISOString(),
           punchStatus: checkIns.has(punchKey)
             ? 'CHECK_IN'
@@ -779,7 +888,7 @@ export class ReportsService {
         date: this.toDateKey(record.date),
         workingMinutes: record.workingMinutes,
         overtimeMinutes: record.workingMinutes - minimumMinutes,
-          status: this.getEffectiveAttendanceStatus(record),
+        status: this.getEffectiveAttendanceStatus(record),
       }))
       .sort((left, right) => right.overtimeMinutes - left.overtimeMinutes);
 
@@ -1115,13 +1224,15 @@ export class ReportsService {
   }
 
   private resolveReportAttendanceStatus(
-    record: {
-      status: AttendanceStatus;
-      statusOverride: AttendanceStatus | null;
-      firstCheckIn: Date | null;
-      lastCheckOut: Date | null;
-      graceDeadline: Date | null;
-    } | undefined,
+    record:
+      | {
+          status: AttendanceStatus;
+          statusOverride: AttendanceStatus | null;
+          firstCheckIn: Date | null;
+          lastCheckOut: Date | null;
+          graceDeadline: Date | null;
+        }
+      | undefined,
     dateKey: string,
     timezone: string,
     databaseNow: Date,

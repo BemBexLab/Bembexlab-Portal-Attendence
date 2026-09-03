@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import type {
   AttendanceExportReport,
   DailyReport,
+  DeductionsReport,
   EmployeeHistoryReport,
   LateArrivalsReport,
   MonthlyReport,
@@ -49,6 +50,10 @@ export function getAttendanceExport(from: string, to: string) {
 
 export function getPayrollReport(month?: string) {
   return getReport<PayrollReport>("/reports/payroll", { month });
+}
+
+export function getDeductionsReport(month?: string) {
+  return getReport<DeductionsReport>("/reports/deductions", { month });
 }
 
 export function getEmployeeHistory(

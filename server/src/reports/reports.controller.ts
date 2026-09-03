@@ -61,6 +61,15 @@ export class ReportsController {
     return this.reportsService.getPayrollReport(user, query);
   }
 
+  @Get('deductions')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
+  deductions(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Query() query: MonthlyReportQueryDto,
+  ) {
+    return this.reportsService.getDeductionsReport(user, query);
+  }
+
   @Get('attendance-export')
   attendanceExport(
     @CurrentUserDecorator() user: CurrentUser,

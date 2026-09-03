@@ -85,7 +85,6 @@ export type PayrollRow = {
   assessedWorkingDays: number;
   dailyRate: number;
   presentDays: number;
-  lateDays: number;
   absentDays: number;
   halfDays: number;
   halfDayDeductionDays: number;
@@ -368,4 +367,34 @@ export type ReportAnalytics = {
   to: string;
   trends: ReportTrend[];
   departments: ReportDepartmentStatistic[];
+};
+
+export type DeductionRow = {
+  employeeId: string;
+  employeeCode: string;
+  employee: string;
+  department: string;
+  payrollCycleMonth: string;
+  halfDays: number;
+  absentDays: number;
+  halfDayDeductionDays: number;
+  totalDeductionDays: number;
+  monthlySalary: number;
+  payrollDays: number;
+  dailyRate: number;
+  deductionAmount: number;
+  calculatedThrough: string | null;
+};
+
+export type DeductionsReport = {
+  month: string;
+  summary: {
+    employees: number;
+    totalHalfDays: number;
+    totalAbsentDays: number;
+    totalHalfDayDeductionDays: number;
+    totalDeductionDays: number;
+    totalDeductionAmount: number;
+  };
+  rows: DeductionRow[];
 };

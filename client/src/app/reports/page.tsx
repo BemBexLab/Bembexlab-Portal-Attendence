@@ -1,16 +1,10 @@
 "use client";
 
-import { CalendarDays, Clock3, UserCheck, UserX } from "lucide-react";
-
-import { MetricCard } from "@/components/dashboard/metric-card";
 import { AppShell } from "@/components/layout/app-shell";
+import { DeductionsReportPanel } from "@/components/reports/deductions-report";
 import { PayrollReportPanel } from "@/components/reports/payroll-report";
-import { useDailyReport } from "@/hooks/use-reports";
 
 export default function ReportsPage() {
-  const dailyReport = useDailyReport();
-  const daily = dailyReport.data;
-
   return (
     <AppShell
       description="Attendance summaries for operations and HR review."
@@ -44,6 +38,7 @@ export default function ReportsPage() {
           />
         </div> */}
 
+        {/* <DeductionsReportPanel /> */}
         <PayrollReportPanel />
       </div>
     </AppShell>
