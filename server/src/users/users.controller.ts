@@ -54,6 +54,7 @@ export class UsersController {
       user,
       id,
       dto.monthlySalary,
+      dto.allowance,
     );
   }
 

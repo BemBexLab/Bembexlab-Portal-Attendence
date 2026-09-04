@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { Employee, EmployeeCredential, Shift } from "@/types/attendance";
+import type { Employee, EmployeeCredential, EmployeeRequest, Shift } from "@/types/attendance";
 
 import {
   fetchDeviceInfo,
@@ -171,7 +171,7 @@ export function useEmployeeRequests(status?: "PENDING" | "APPROVED" | "REJECTED"
   return useQuery({
     queryKey: ["requests", status ?? "all"],
     queryFn: () => getEmployeeRequests(status),
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
 }
@@ -181,7 +181,19 @@ export function useUpdateEmployeeRequestStatus() {
 
   return useMutation({
     mutationFn: updateEmployeeRequestStatus,
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
+      queryClient.setQueriesData<EmployeeRequest[]>(
+        { queryKey: ["requests"] },
+        (old) => {
+          if (!old) return old;
+          return old.map((request) =>
+            request.id === updated.id
+              ? { ...request, status: updated.status, decidedAt: updated.decidedAt }
+              : request,
+          );
+        },
+      );
+
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["requests"] }),
         queryClient.invalidateQueries({ queryKey: attendanceKeys.scheduledStatuses }),
@@ -295,13 +307,20 @@ export function useUpdateEmployeeStatus() {
 
   return useMutation({
     mutationFn: updateEmployeeStatus,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.employees }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
-        queryClient.invalidateQueries({ queryKey: ["reports"] }),
-      ]);
+    onSuccess: (updatedEmployee) => {
+      queryClient.setQueryData<Employee[]>(
+        attendanceKeys.employees,
+        (current) =>
+          current?.map((employee) =>
+            employee.id === updatedEmployee.id
+              ? { ...employee, isActive: updatedEmployee.isActive }
+              : employee,
+          ),
+      );
+      void queryClient.invalidateQueries({ queryKey: attendanceKeys.employees });
+      void queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance });
+      void queryClient.invalidateQueries({ queryKey: attendanceKeys.summary });
+      void queryClient.invalidateQueries({ queryKey: ["reports"] });
     },
   });
 }
@@ -317,7 +336,11 @@ export function useUpdateEmployeeSalary() {
         (current) =>
           current?.map((employee) =>
             employee.id === updatedEmployee.id
-              ? { ...employee, monthlySalary: updatedEmployee.monthlySalary }
+              ? {
+                  ...employee,
+                  monthlySalary: updatedEmployee.monthlySalary,
+                  allowance: updatedEmployee.allowance,
+                }
               : employee,
           ),
       );

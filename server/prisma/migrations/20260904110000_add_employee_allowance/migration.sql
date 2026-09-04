@@ -1,0 +1,2 @@
+ALTER TABLE "employees"
+ADD COLUMN "allowance" DECIMAL(12, 2) NOT NULL DEFAULT 0;

@@ -77,8 +77,11 @@ export class UsersService {
 
     const employees = await this.prisma.employee.findMany({
       where: {
-        isActive: true,
         deviceUserId: { not: null },
+        // Device-removed employees remain hidden while their historical rows
+        // stay intact. Manually paused employees remain visible so an admin
+        // can activate them again from the employee directory.
+        OR: [{ isActive: true }, { attendancePausedAt: { not: null } }],
         ...(user.role === UserRole.SUPER_ADMIN
           ? {}
           : { organizationId: user.organizationId as string }),
@@ -107,6 +110,7 @@ export class UsersService {
       deviceUserId: employee.deviceUserId,
       isActive: employee.isActive,
       monthlySalary: employee.monthlySalary.toString(),
+      allowance: employee.allowance.toString(),
       shift: employee.shiftAssignments[0]
         ? {
             id: employee.shiftAssignments[0].shift.id,
@@ -317,13 +321,17 @@ export class UsersService {
       throw new ForbiddenException('Cannot update another organization');
     }
 
-    const databaseNow = isActive ? await this.prisma.databaseNow() : null;
+    const databaseNow = await this.prisma.databaseNow();
 
     return this.prisma.employee.update({
       where: { id: employee.id },
       data: {
         isActive,
-        attendanceTrackingSince: databaseNow,
+        attendancePausedAt: isActive ? null : databaseNow,
+        // Starting a new active period establishes a hard lower boundary for
+        // raw-punch processing and payroll assessment. While paused, the
+        // boundary is cleared and no attendance is monitored.
+        attendanceTrackingSince: isActive ? databaseNow : null,
       },
       select: {
         id: true,
@@ -338,8 +346,13 @@ export class UsersService {
   async updateEmployeeSalary(
     user: CurrentUser,
     employeeId: string,
-    monthlySalary: number,
+    monthlySalary?: number,
+    allowance?: number,
   ) {
+    if (monthlySalary === undefined && allowance === undefined) {
+      throw new BadRequestException('Monthly salary or allowance is required');
+    }
+
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
       select: { id: true, organizationId: true },
@@ -358,13 +371,17 @@ export class UsersService {
 
     const updated = await this.prisma.employee.update({
       where: { id: employee.id },
-      data: { monthlySalary },
+      data: {
+        ...(monthlySalary === undefined ? {} : { monthlySalary }),
+        ...(allowance === undefined ? {} : { allowance }),
+      },
       select: {
         id: true,
         employeeCode: true,
         deviceUserId: true,
         name: true,
         monthlySalary: true,
+        allowance: true,
       },
     });
 
@@ -372,6 +389,7 @@ export class UsersService {
       ...updated,
       employeeCode: updated.deviceUserId ?? updated.employeeCode,
       monthlySalary: updated.monthlySalary.toString(),
+      allowance: updated.allowance.toString(),
     };
   }
 

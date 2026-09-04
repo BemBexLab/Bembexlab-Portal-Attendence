@@ -10,7 +10,6 @@ import type { CurrentUser } from '../auth/types/current-user.type';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   dateKeyToDatabaseDate,
-  getDateKeyInTimeZone,
   getPakistanShiftEnd,
   zonedDateTimeToUtc,
 } from './utils/timezone';
@@ -22,16 +21,11 @@ export class AttendanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getScheduledStatuses(user: CurrentUser) {
-    const databaseNow = await this.prisma.databaseNow();
-    const today = dateKeyToDatabaseDate(
-      getDateKeyInTimeZone(databaseNow, 'Asia/Karachi'),
-    );
     const records = await this.prisma.dailyAttendance.findMany({
       where: {
         ...(user.role === UserRole.SUPER_ADMIN
           ? {}
           : { organizationId: user.organizationId as string }),
-        date: { gte: today },
         statusOverride: {
           in: [AttendanceStatus.REMOTE, AttendanceStatus.ON_LEAVE],
         },
@@ -57,15 +51,11 @@ export class AttendanceService {
   async assignBulkStatus(user: CurrentUser, dto: BulkAttendanceStatusDto) {
     const employee = await this.prisma.employee.findUnique({
       where: { id: dto.employeeId },
-      select: { id: true, organizationId: true, isActive: true },
+      select: { id: true, organizationId: true },
     });
 
     if (!employee) {
       throw new NotFoundException('Employee not found');
-    }
-
-    if (!employee.isActive) {
-      throw new BadRequestException('Cannot schedule an inactive employee');
     }
 
     if (
@@ -83,15 +73,6 @@ export class AttendanceService {
     }
 
     const databaseNow = await this.prisma.databaseNow();
-    const today = dateKeyToDatabaseDate(
-      getDateKeyInTimeZone(databaseNow, 'Asia/Karachi'),
-    );
-
-    if (from < today) {
-      throw new BadRequestException(
-        'Bulk status can only be scheduled in advance',
-      );
-    }
 
     const dates: Date[] = [];
 
@@ -168,13 +149,7 @@ export class AttendanceService {
       throw new ForbiddenException('Cannot update another organization');
     }
 
-    const databaseNow = await this.prisma.databaseNow();
-    const today = dateKeyToDatabaseDate(
-      getDateKeyInTimeZone(databaseNow, 'Asia/Karachi'),
-    );
-
     if (
-      record.date < today ||
       (record.statusOverride !== AttendanceStatus.REMOTE &&
         record.statusOverride !== AttendanceStatus.ON_LEAVE)
     ) {
@@ -252,8 +227,8 @@ export class AttendanceService {
       : getPakistanShiftEnd(dateKey);
     const automaticCheckout = [
       'PRESENT',
+      'LATE',
       'HALF_DAY',
-      'MISSING_CHECKOUT',
     ].includes(dto.status)
       ? shiftEnd
       : undefined;

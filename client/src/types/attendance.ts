@@ -19,6 +19,7 @@ export type Employee = {
   deviceUserId: string | null;
   isActive: boolean;
   monthlySalary: string;
+  allowance: string;
   shift: {
     id: string;
     name: string;
@@ -80,6 +81,10 @@ export type PayrollRow = {
   employee: string;
   department: string;
   monthlySalary: number;
+  allowance: number;
+  grossSalary: number;
+  salaryDeductionAmount: number;
+  allowanceDeductionAmount: number;
   payrollDays: number;
   workingDays: number;
   assessedWorkingDays: number;

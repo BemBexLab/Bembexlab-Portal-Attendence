@@ -173,6 +173,7 @@ export class AttendanceProcessingService {
     ]);
     const records = await this.prisma.dailyAttendance.findMany({
       where: {
+        employee: { isActive: true },
         firstCheckIn: { not: null },
         lastCheckOut: null,
         scheduledEnd: { not: null, lte: dueBefore },
@@ -386,6 +387,7 @@ export class AttendanceProcessingService {
           employeeCode: true,
           name: true,
           isActive: true,
+          attendancePausedAt: true,
         },
       });
       const existingEmployeeByDeviceUserId = new Map(
@@ -408,19 +410,6 @@ export class AttendanceProcessingService {
         });
       }
 
-      await this.prisma.employee.updateMany({
-        where: {
-          organizationId: device.organizationId,
-          deviceUserId: {
-            not: null,
-            ...(syncedDeviceUserIds.length > 0
-              ? { notIn: syncedDeviceUserIds }
-              : {}),
-          },
-        },
-        data: { isActive: false },
-      });
-
       await Promise.all(
         deviceUsers.flatMap((deviceUser) => {
           const existing = existingEmployeeByDeviceUserId.get(
@@ -429,7 +418,7 @@ export class AttendanceProcessingService {
 
           return existing &&
             ((deviceUser.name && existing.name !== deviceUser.name) ||
-              !existing.isActive ||
+              (!existing.isActive && existing.attendancePausedAt === null) ||
               existing.employeeCode === `ZKT-${deviceUser.deviceUserId}`)
             ? [
                 this.prisma.employee.update({
@@ -442,7 +431,14 @@ export class AttendanceProcessingService {
                     `ZKT-${deviceUser.deviceUserId}`
                       ? { employeeCode: deviceUser.deviceUserId }
                       : {}),
-                    isActive: true,
+                    ...(existing.attendancePausedAt === null
+                      ? {
+                          isActive: true,
+                          ...(!existing.isActive
+                            ? { attendanceTrackingSince: databaseNow }
+                            : {}),
+                        }
+                      : {}),
                   },
                 }),
               ]
@@ -738,9 +734,7 @@ export class AttendanceProcessingService {
     const status = firstCheckIn
       ? arrivedAfterDeadline
         ? AttendanceStatus.LATE
-        : lastCheckOut
-          ? AttendanceStatus.PRESENT
-          : AttendanceStatus.MISSING_CHECKOUT
+        : AttendanceStatus.PRESENT
       : AttendanceStatus.ABSENT;
     const effectiveStatus = existing?.statusOverride ?? status;
     const shiftEnd = scheduledEnd;
@@ -749,6 +743,7 @@ export class AttendanceProcessingService {
     );
     const automaticCheckoutStatuses = new Set<AttendanceStatus>([
       AttendanceStatus.PRESENT,
+      AttendanceStatus.LATE,
       AttendanceStatus.HALF_DAY,
       AttendanceStatus.MISSING_CHECKOUT,
     ]);

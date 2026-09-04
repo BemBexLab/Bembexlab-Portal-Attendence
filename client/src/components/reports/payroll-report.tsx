@@ -113,11 +113,12 @@ export function PayrollReportPanel() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full min-w-[1280px] text-left text-sm">
             <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Employee</th>
                 <th className="px-4 py-3 font-medium">Monthly salary</th>
+                <th className="px-4 py-3 font-medium">Allowance</th>
                 <th className="px-4 py-3 font-medium">Payroll days</th>
                 <th className="px-4 py-3 font-medium">Daily rate</th>
                 <th className="px-4 py-3 font-medium">Absent</th>
@@ -148,6 +149,7 @@ export function PayrollReportPanel() {
                     </p>
                   </td>
                   <td className="px-4 py-3 tabular-nums">{money(row.monthlySalary)}</td>
+                  <td className="px-4 py-3 tabular-nums">{money(row.allowance)}</td>
                   <td className="px-4 py-3 tabular-nums">{row.payrollDays}</td>
                   <td className="px-4 py-3 tabular-nums">{money(row.dailyRate)}</td>
                   <td className="px-4 py-3 tabular-nums">{row.absentDays}</td>
@@ -225,7 +227,9 @@ export function PayrollReportPanel() {
                 ["Total absent days", selectedEmployee.absentDays],
                 ["Total half days", selectedEmployee.halfDays],
                 ["Total deduction days", selectedEmployee.totalDeductionDays],
-                ["Gross salary", money(selectedEmployee.monthlySalary)],
+                ["Gross salary", money(selectedEmployee.grossSalary)],
+                ["Allowance", money(selectedEmployee.allowance)],
+                ["Allowance deducted", money(selectedEmployee.allowanceDeductionAmount)],
                 ["Deduction amount", money(selectedEmployee.deductionAmount)],
                 ["Final amount", money(selectedEmployee.payableSalary)],
               ].map(([label, value]) => (

@@ -38,12 +38,13 @@ function formatHours(minutes: number) {
 }
 
 const editableStatuses: AttendanceStatus[] = [
-  "MISSING_CHECKOUT",
   "ABSENT",
   "PRESENT",
+  "LATE",
   "HALF_DAY",
   "REMOTE",
   "ON_LEAVE",
+  "HOLIDAY",
 ];
 
 function formatStatus(status: AttendanceStatus) {

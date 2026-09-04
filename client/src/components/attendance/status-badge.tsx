@@ -15,7 +15,9 @@ export function AttendanceStatusBadge({ status }: { status: AttendanceStatus }) 
   }
 
   if (status === "MISSING_CHECKOUT") {
-    return <Badge tone="blue">Missing checkout</Badge>;
+    // Legacy rows may still contain this value. Treat them as present while
+    // keeping the database enum intact for historical-data compatibility.
+    return <Badge tone="green">Present</Badge>;
   }
 
   if (status === "HALF_DAY") {

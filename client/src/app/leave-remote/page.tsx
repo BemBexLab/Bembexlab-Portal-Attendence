@@ -28,9 +28,8 @@ export default function LeaveRemotePage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const activeEmployees = (employees.data ?? []).filter(
+  const availableEmployees = (employees.data ?? []).filter(
     (employee) =>
-      employee.isActive &&
       (!employeeSearch.trim() ||
         employee.name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
         employee.employeeCode
@@ -47,6 +46,24 @@ export default function LeaveRemotePage() {
       return;
     }
 
+    const statusLabel = status === "REMOTE" ? "remote work" : "leave";
+    const confirmation = await Swal.fire({
+      title: "Save assignment?",
+      text: `Assign ${statusLabel} to ${selectedEmployee?.name ?? "this employee"} from ${from} to ${to}?`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Yes, save it",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#171717",
+      cancelButtonColor: "#737373",
+      reverseButtons: true,
+      focusCancel: true,
+    });
+
+    if (!confirmation.isConfirmed) {
+      return;
+    }
+
     setMessage(null);
 
     try {
@@ -59,8 +76,20 @@ export default function LeaveRemotePage() {
       setMessage(
         `${result.assignedDates.length} working day${result.assignedDates.length === 1 ? "" : "s"} scheduled${result.skippedWeekendDays ? `; ${result.skippedWeekendDays} weekend day${result.skippedWeekendDays === 1 ? "" : "s"} skipped` : ""}.`,
       );
+      await Swal.fire({
+        title: "Assignment saved",
+        text: `${statusLabel[0].toUpperCase()}${statusLabel.slice(1)} was assigned successfully.`,
+        icon: "success",
+        confirmButtonColor: "#171717",
+      });
     } catch {
-      setMessage("The schedule could not be saved. Dates must be today or later.");
+      setMessage("The schedule could not be saved. Please check the employee and date range.");
+      await Swal.fire({
+        title: "Could not save assignment",
+        text: "Please check the employee and date range, then try again.",
+        icon: "error",
+        confirmButtonColor: "#171717",
+      });
     }
   };
 
@@ -73,7 +102,7 @@ export default function LeaveRemotePage() {
         <Panel>
           <PanelHeader>
             <div>
-              <h2 className="text-sm font-semibold">Assign status in advance</h2>
+              <h2 className="text-sm font-semibold">Assign status</h2>
               <p className="text-xs text-muted-foreground">
                 Saturday and Sunday are skipped automatically.
               </p>
@@ -106,8 +135,8 @@ export default function LeaveRemotePage() {
                   id="employee-suggestions"
                   role="listbox"
                 >
-                  {activeEmployees.length ? (
-                    activeEmployees.slice(0, 10).map((employee) => (
+                  {availableEmployees.length ? (
+                    availableEmployees.slice(0, 10).map((employee) => (
                       <button
                         className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left transition hover:bg-muted"
                         key={employee.id}
@@ -132,7 +161,7 @@ export default function LeaveRemotePage() {
                     ))
                   ) : (
                     <span className="block px-3 py-4 text-center text-sm text-muted-foreground">
-                      No active employee found.
+                      No employee found.
                     </span>
                   )}
                 </span>
@@ -211,9 +240,9 @@ export default function LeaveRemotePage() {
         <Panel className="min-w-0">
           <PanelHeader>
             <div>
-              <h2 className="text-sm font-semibold">Upcoming assignments</h2>
+              <h2 className="text-sm font-semibold">Assignments</h2>
               <p className="text-xs text-muted-foreground">
-                Approved remote and leave dates from today onward.
+                Approved remote and leave dates for all recorded dates.
               </p>
             </div>
           </PanelHeader>
@@ -303,7 +332,7 @@ export default function LeaveRemotePage() {
             </div>
             {!scheduled.data?.length && !scheduled.isLoading ? (
               <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                No upcoming leave or remote assignments.
+                No leave or remote assignments.
               </p>
             ) : null}
           </PanelBody>

@@ -121,11 +121,17 @@ export async function updateEmployeeStatus(input: {
 
 export async function updateEmployeeSalary(input: {
   employeeId: string;
-  monthlySalary: number;
+  monthlySalary?: number;
+  allowance?: number;
 }) {
-  const response = await api.patch<Pick<Employee, "id" | "monthlySalary">>(
+  const response = await api.patch<Pick<Employee, "id" | "monthlySalary" | "allowance">>(
     `/users/employees/${input.employeeId}/salary`,
-    { monthlySalary: input.monthlySalary },
+    {
+      ...(input.monthlySalary === undefined
+        ? {}
+        : { monthlySalary: input.monthlySalary }),
+      ...(input.allowance === undefined ? {} : { allowance: input.allowance }),
+    },
   );
   return response.data;
 }

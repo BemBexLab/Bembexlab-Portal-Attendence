@@ -28,7 +28,6 @@ type ReportAttendanceStatus = AttendanceStatus | 'NOT_STARTED';
 const PRESENT_STATUSES = new Set<AttendanceStatus>([
   AttendanceStatus.PRESENT,
   AttendanceStatus.LATE,
-  AttendanceStatus.MISSING_CHECKOUT,
   AttendanceStatus.HALF_DAY,
   AttendanceStatus.REMOTE,
 ]);
@@ -106,13 +105,22 @@ export class ReportsService {
     );
     const rows = employees.map((employee) => {
       const record = recordsByEmployee.get(employee.id);
-      const status = this.resolveReportAttendanceStatus(
+      const timezone = employee.organization.timezone || 'Asia/Karachi';
+      const status = this.isTrackedForShiftDate(
+        employee.attendanceTrackingSince,
         record,
         dateKey,
-        employee.organization.timezone || 'Asia/Karachi',
-        databaseNow,
+        timezone,
         employee.shiftAssignments,
-      );
+      )
+        ? this.resolveReportAttendanceStatus(
+            record,
+            dateKey,
+            timezone,
+            databaseNow,
+            employee.shiftAssignments,
+          )
+        : 'NOT_STARTED';
 
       return {
         employeeId: employee.id,
@@ -334,10 +342,22 @@ export class ReportsService {
         const record = attendanceByEmployeeDate.get(
           `${employee.id}:${dateKey}`,
         );
+        const timezone = employee.organization.timezone || 'Asia/Karachi';
+        if (
+          !this.isTrackedForShiftDate(
+            employee.attendanceTrackingSince,
+            record,
+            dateKey,
+            timezone,
+            employee.shiftAssignments,
+          )
+        ) {
+          continue;
+        }
         const status = this.resolveReportAttendanceStatus(
           record,
           dateKey,
-          employee.organization.timezone || 'Asia/Karachi',
+          timezone,
           databaseNow,
           employee.shiftAssignments,
         );
@@ -368,12 +388,24 @@ export class ReportsService {
       }
 
       const monthlySalary = Number(employee.monthlySalary);
+      const allowance = Number(employee.allowance);
       const dailyRate = payrollDays ? monthlySalary / payrollDays : 0;
       const halfDayDeductionDays = Math.floor(halfDays / 3);
       const totalDeductionDays = absentDays + halfDayDeductionDays;
-      const deductionAmount = Math.min(
+      const salaryDeductionAmount = Math.min(
         monthlySalary,
         dailyRate * totalDeductionDays,
+      );
+      // The allowance is paid only when the employee has no deduction days.
+      // Once there is at least one deduction day, the full allowance is
+      // forfeited in addition to the normal per-day salary deduction.
+      const allowanceDeductionAmount = totalDeductionDays > 0 ? allowance : 0;
+      // Allowance is a deduction/forfeiture, not an addition to gross salary.
+      // Gross salary therefore remains the employee's monthly salary.
+      const grossSalary = monthlySalary;
+      const deductionAmount = Math.min(
+        grossSalary,
+        salaryDeductionAmount + allowanceDeductionAmount,
       );
 
       return {
@@ -382,17 +414,21 @@ export class ReportsService {
         employee: employee.name,
         department: employee.department?.name ?? 'Unassigned',
         monthlySalary: this.roundMoney(monthlySalary),
+        allowance: this.roundMoney(allowance),
+        grossSalary: this.roundMoney(grossSalary),
         payrollDays,
         workingDays: workingDateKeys.length,
         assessedWorkingDays,
         dailyRate: this.roundMoney(dailyRate),
+        salaryDeductionAmount: this.roundMoney(salaryDeductionAmount),
+        allowanceDeductionAmount: this.roundMoney(allowanceDeductionAmount),
         presentDays,
         absentDays,
         halfDays,
         halfDayDeductionDays,
         totalDeductionDays,
         deductionAmount: this.roundMoney(deductionAmount),
-        payableSalary: this.roundMoney(monthlySalary - deductionAmount),
+        payableSalary: this.roundMoney(grossSalary - deductionAmount),
         attendanceDetails,
       };
     });
@@ -438,11 +474,11 @@ export class ReportsService {
           : null,
       workingDays: workingDateKeys.length,
       payrollDays,
-      rule: "Payroll runs every calendar day from the 25th through the following month's 25th. Saturdays and Sundays are paid off-days and never create deductions. A late arrival is a half day. Each absent weekday deducts 1 calendar-day salary; every 3 half days deduct 1 calendar-day salary.",
+      rule: "Payroll runs every calendar day from the 25th through the following month's 25th. Saturdays and Sundays are paid off-days and never create deductions. A late arrival is a half day. Each absent weekday deducts 1 calendar-day salary; every 3 half days deduct 1 calendar-day salary. The full allowance is forfeited whenever at least one deduction day is assessed.",
       summary: {
         employees: rows.length,
         grossSalary: this.roundMoney(
-          rows.reduce((total, row) => total + row.monthlySalary, 0),
+          rows.reduce((total, row) => total + row.grossSalary, 0),
         ),
         deductions: this.roundMoney(
           rows.reduce((total, row) => total + row.deductionAmount, 0),
@@ -580,6 +616,14 @@ export class ReportsService {
 
       for (const employee of employees) {
         const record = recordsByEmployeeDate.get(`${employee.id}:${dateKey}`);
+        const timezone = employee.organization.timezone || 'Asia/Karachi';
+        const isTracked = this.isTrackedForShiftDate(
+          employee.attendanceTrackingSince,
+          record,
+          dateKey,
+          timezone,
+          employee.shiftAssignments,
+        );
 
         rows.push({
           date: dateKey,
@@ -591,13 +635,15 @@ export class ReportsService {
           firstCheckIn: record?.firstCheckIn?.toISOString() ?? null,
           lastCheckOut: record?.lastCheckOut?.toISOString() ?? null,
           workingMinutes: record?.workingMinutes ?? 0,
-          status: this.resolveReportAttendanceStatus(
-            record,
-            dateKey,
-            employee.organization.timezone || 'Asia/Karachi',
-            databaseNow,
-            employee.shiftAssignments,
-          ),
+          status: isTracked
+            ? this.resolveReportAttendanceStatus(
+                record,
+                dateKey,
+                timezone,
+                databaseNow,
+                employee.shiftAssignments,
+              )
+            : 'NOT_STARTED',
         });
       }
     }
@@ -822,7 +868,7 @@ export class ReportsService {
         firstCheckIn: row.firstCheckIn?.toISOString() ?? null,
         lastCheckOut: row.lastCheckOut?.toISOString() ?? null,
         workingMinutes: row.workingMinutes,
-        status: row.statusOverride ?? row.status,
+        status: this.getEffectiveAttendanceStatus(row),
       })),
     };
   }
@@ -978,10 +1024,22 @@ export class ReportsService {
       let assessedEmployees = 0;
       for (const employee of employees) {
         const record = recordByEmployeeDate.get(`${employee.id}:${dateKey}`);
+        const timezone = employee.organization.timezone || 'Asia/Karachi';
+        if (
+          !this.isTrackedForShiftDate(
+            employee.attendanceTrackingSince,
+            record,
+            dateKey,
+            timezone,
+            employee.shiftAssignments,
+          )
+        ) {
+          continue;
+        }
         const status = this.resolveReportAttendanceStatus(
           record,
           dateKey,
-          employee.organization.timezone || 'Asia/Karachi',
+          timezone,
           databaseNow,
           employee.shiftAssignments,
         );
@@ -1286,6 +1344,42 @@ export class ReportsService {
       : AttendanceStatus.ABSENT;
   }
 
+  private isTrackedForShiftDate(
+    trackingSince: Date | null,
+    record: { firstCheckIn: Date | null } | undefined,
+    dateKey: string,
+    timezone: string,
+    assignments: Array<{
+      effectiveFrom: Date;
+      effectiveTo: Date | null;
+      shift: { startMinutes: number };
+    }>,
+  ) {
+    if (!trackingSince) return true;
+
+    const date = this.toDatabaseDate(dateKey);
+    const assignment = assignments.find(
+      (item) =>
+        item.effectiveFrom <= date &&
+        (!item.effectiveTo || item.effectiveTo >= date),
+    );
+    if (assignment) {
+      const scheduledStart = zonedDateTimeToUtc(
+        dateKey,
+        assignment.shift.startMinutes,
+        timezone,
+      );
+      if (trackingSince <= scheduledStart) return true;
+    }
+
+    // If activation happened after this shift began, only a new punch made
+    // after activation opts the employee into that partial shift. Otherwise
+    // the first assessable shift is the next one.
+    return Boolean(
+      record?.firstCheckIn && record.firstCheckIn.getTime() >= trackingSince.getTime(),
+    );
+  }
+
   private summarizeDailyRows(
     rows: Array<{ status: ReportAttendanceStatus; workingMinutes: number }>,
   ) {
@@ -1319,8 +1413,24 @@ export class ReportsService {
     lastCheckOut: Date | null;
     graceDeadline: Date | null;
   }) {
+    const storedStatus = record.statusOverride ?? record.status;
+
+    // MISSING_CHECKOUT was used by older processing runs. It is no longer a
+    // user-facing status: an on-time punch is Present and a late punch is
+    // Late, regardless of whether checkout has arrived yet.
+    if (storedStatus === AttendanceStatus.MISSING_CHECKOUT) {
+      if (!record.firstCheckIn) return AttendanceStatus.ABSENT;
+
+      const graceMinuteEnd = record.graceDeadline
+        ? new Date(record.graceDeadline.getTime() + 60_000 - 1)
+        : null;
+      return graceMinuteEnd && record.firstCheckIn > graceMinuteEnd
+        ? AttendanceStatus.LATE
+        : AttendanceStatus.PRESENT;
+    }
+
     if (record.statusOverride || record.status !== AttendanceStatus.LATE) {
-      return record.statusOverride ?? record.status;
+      return storedStatus;
     }
 
     // Daily rows may have been calculated before the inclusive grace-minute
@@ -1335,7 +1445,7 @@ export class ReportsService {
     ) {
       return record.lastCheckOut
         ? AttendanceStatus.PRESENT
-        : AttendanceStatus.MISSING_CHECKOUT;
+        : AttendanceStatus.PRESENT;
     }
 
     return record.status;
