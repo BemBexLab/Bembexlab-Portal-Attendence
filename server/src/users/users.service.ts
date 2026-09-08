@@ -1,5 +1,10 @@
 import { ConflictException, ForbiddenException, Injectable, BadRequestException } from '@nestjs/common';
-import { User, UserRole } from '@prisma/client';
+import {
+  EmployeeEarningStatus,
+  EmployeeLoanStatus,
+  User,
+  UserRole,
+} from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,11 +14,22 @@ import {
   getDateKeyInTimeZone,
 } from '../attendance/utils/timezone';
 import { UpdateEmployeeCredentialsDto } from './dto/update-employee-credentials.dto';
+import { CreateEmployeeEarningDto } from './dto/create-employee-earning.dto';
+import { UpdateEmployeeEarningStatusDto } from './dto/update-employee-earning-status.dto';
+import { CreateEmployeeLoanDto } from './dto/create-employee-loan.dto';
+import { UpdateEmployeeLoanDto } from './dto/update-employee-loan.dto';
 
 export type SafeUser = Omit<User, 'passwordHash'>;
 
 @Injectable()
 export class UsersService {
+  // Employee directory reads are frequent during navigation. The default
+  // shift check only needs to run occasionally; deduplicate concurrent checks
+  // and avoid repeating the same three database queries on every request.
+  private readonly defaultShiftAssignmentCheckedAt = new Map<string, number>();
+  private readonly defaultShiftAssignmentChecks = new Map<string, Promise<void>>();
+  private readonly defaultShiftAssignmentTtlMs = 30_000;
+
   constructor(private readonly prisma: PrismaService) {}
 
   findByEmail(email: string) {
@@ -71,11 +87,8 @@ export class UsersService {
           (organization) => organization.id,
         )
       : [user.organizationId as string];
-    for (const organizationId of organizationIds) {
-      await this.ensureDefaultShiftAssignments(organizationId);
-    }
 
-    const employees = await this.prisma.employee.findMany({
+    const findEmployees = () => this.prisma.employee.findMany({
       where: {
         deviceUserId: { not: null },
         // Device-removed employees remain hidden while their historical rows
@@ -101,6 +114,16 @@ export class UsersService {
         employeeCode: 'asc',
       },
     });
+
+    let employees = await findEmployees();
+    // Most requests already have assignments. Only pay the default-shift
+    // setup cost when the result actually contains an unassigned employee.
+    if (employees.some((employee) => employee.shiftAssignments.length === 0)) {
+      for (const organizationId of organizationIds) {
+        await this.ensureDefaultShiftAssignments(organizationId);
+      }
+      employees = await findEmployees();
+    }
 
     return employees.map((employee) => ({
       id: employee.id,
@@ -249,6 +272,31 @@ export class UsersService {
   }
 
   private async ensureDefaultShiftAssignments(organizationId: string) {
+    const now = Date.now();
+    const checkedAt = this.defaultShiftAssignmentCheckedAt.get(organizationId);
+    if (checkedAt && now - checkedAt < this.defaultShiftAssignmentTtlMs) {
+      return;
+    }
+
+    const running = this.defaultShiftAssignmentChecks.get(organizationId);
+    if (running) {
+      await running;
+      return;
+    }
+
+    const check = this.ensureDefaultShiftAssignmentsInternal(organizationId);
+    this.defaultShiftAssignmentChecks.set(organizationId, check);
+    try {
+      await check;
+      this.defaultShiftAssignmentCheckedAt.set(organizationId, Date.now());
+    } finally {
+      if (this.defaultShiftAssignmentChecks.get(organizationId) === check) {
+        this.defaultShiftAssignmentChecks.delete(organizationId);
+      }
+    }
+  }
+
+  private async ensureDefaultShiftAssignmentsInternal(organizationId: string) {
     // Reuse an existing 21:00–06:00 shift when available; otherwise create a
     // clearly labelled default shift for this organization.
     let shift = await this.prisma.shift.findFirst({
@@ -273,22 +321,24 @@ export class UsersService {
       }
     }
 
-    const organization = await this.prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { timezone: true },
-    });
+    const [organization, employees] = await Promise.all([
+      this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { timezone: true },
+      }),
+      this.prisma.employee.findMany({
+        where: {
+          organizationId,
+          isActive: true,
+          deviceUserId: { not: null },
+          shiftAssignments: { none: {} },
+        },
+        select: { id: true },
+      }),
+    ]);
     const effectiveFrom = dateKeyToDatabaseDate(
       getDateKeyInTimeZone(new Date(), organization?.timezone || 'Asia/Karachi'),
     );
-    const employees = await this.prisma.employee.findMany({
-      where: {
-        organizationId,
-        isActive: true,
-        deviceUserId: { not: null },
-        shiftAssignments: { none: {} },
-      },
-      select: { id: true },
-    });
     if (employees.length) {
       await this.prisma.employeeShiftAssignment.createMany({
         data: employees.map((employee) => ({
@@ -390,6 +440,226 @@ export class UsersService {
       employeeCode: updated.deviceUserId ?? updated.employeeCode,
       monthlySalary: updated.monthlySalary.toString(),
       allowance: updated.allowance.toString(),
+    };
+  }
+
+  private async getEmployeeForEarnings(user: CurrentUser, employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, organizationId: true, monthlySalary: true },
+    });
+
+    if (!employee) throw new BadRequestException('Employee not found');
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      employee.organizationId !== user.organizationId
+    ) {
+      throw new ForbiddenException('Cannot access another organization');
+    }
+    return employee;
+  }
+
+  async listEmployeeEarnings(
+    user: CurrentUser,
+    employeeId: string,
+    payrollCycleMonth?: string,
+  ) {
+    await this.getEmployeeForEarnings(user, employeeId);
+    const earnings = await this.prisma.employeeEarning.findMany({
+      where: {
+        employeeId,
+        ...(payrollCycleMonth ? { payrollCycleMonth } : {}),
+      },
+      orderBy: [{ payrollCycleMonth: 'desc' }, { createdAt: 'desc' }],
+    });
+    return earnings.map((earning) => ({
+      ...earning,
+      amount: earning.amount.toString(),
+      percentage: earning.percentage?.toString() ?? null,
+    }));
+  }
+
+  async createEmployeeEarning(
+    user: CurrentUser,
+    employeeId: string,
+    dto: CreateEmployeeEarningDto,
+  ) {
+    const employee = await this.getEmployeeForEarnings(user, employeeId);
+    const earning = await this.prisma.employeeEarning.create({
+      data: {
+        organizationId: employee.organizationId,
+        employeeId,
+        type: dto.type,
+        amount: dto.amount,
+        percentage: dto.percentage,
+        payrollCycleMonth: dto.payrollCycleMonth,
+        description: dto.description?.trim() || null,
+        status: EmployeeEarningStatus.APPROVED,
+      },
+    });
+    return {
+      ...earning,
+      amount: earning.amount.toString(),
+      percentage: earning.percentage?.toString() ?? null,
+    };
+  }
+
+  async updateEmployeeEarningStatus(
+    user: CurrentUser,
+    employeeId: string,
+    earningId: string,
+    dto: UpdateEmployeeEarningStatusDto,
+  ) {
+    await this.getEmployeeForEarnings(user, employeeId);
+    const earning = await this.prisma.employeeEarning.findFirst({
+      where: { id: earningId, employeeId },
+    });
+    if (!earning) throw new BadRequestException('Earning not found');
+    const updated = await this.prisma.employeeEarning.update({
+      where: { id: earningId },
+      data: { status: dto.status },
+    });
+    return {
+      ...updated,
+      amount: updated.amount.toString(),
+      percentage: updated.percentage?.toString() ?? null,
+    };
+  }
+
+  async deleteEmployeeEarning(
+    user: CurrentUser,
+    employeeId: string,
+    earningId: string,
+  ) {
+    await this.getEmployeeForEarnings(user, employeeId);
+    const result = await this.prisma.employeeEarning.deleteMany({
+      where: { id: earningId, employeeId },
+    });
+    if (!result.count) throw new BadRequestException('Earning not found');
+    return { id: earningId, removed: true };
+  }
+
+  async listEmployeeLoans(user: CurrentUser, employeeId: string) {
+    await this.getEmployeeForEarnings(user, employeeId);
+    const loans = await this.prisma.employeeLoan.findMany({
+      where: { employeeId },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+    });
+    return loans.map((loan) => this.serializeLoan(loan));
+  }
+
+  async listAllEmployeeLoans(user: CurrentUser) {
+    if (user.role !== UserRole.SUPER_ADMIN && !user.organizationId) {
+      throw new ForbiddenException('User is not assigned to an organization');
+    }
+
+    const loans = await this.prisma.employeeLoan.findMany({
+      where:
+        user.role === UserRole.SUPER_ADMIN
+          ? {}
+          : { organizationId: user.organizationId as string },
+      include: {
+        employee: {
+          select: { id: true, employeeCode: true, deviceUserId: true, name: true },
+        },
+      },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+    });
+    return loans.map((loan) => ({
+      ...this.serializeLoan(loan),
+      employee: {
+        id: loan.employee.id,
+        employeeCode: loan.employee.deviceUserId ?? loan.employee.employeeCode,
+        name: loan.employee.name,
+      },
+    }));
+  }
+
+  async createEmployeeLoan(
+    user: CurrentUser,
+    employeeId: string,
+    dto: CreateEmployeeLoanDto,
+  ) {
+    const employee = await this.getEmployeeForEarnings(user, employeeId);
+    const loan = await this.prisma.employeeLoan.create({
+      data: {
+        organizationId: employee.organizationId,
+        employeeId,
+        principalAmount: dto.principalAmount,
+        monthlyInstallment: dto.monthlyInstallment,
+        startCycleMonth: dto.startCycleMonth,
+        numberOfInstallments: dto.numberOfInstallments,
+        description: dto.description?.trim() || null,
+      },
+    });
+    return this.serializeLoan(loan);
+  }
+
+  async updateEmployeeLoan(
+    user: CurrentUser,
+    employeeId: string,
+    loanId: string,
+    dto: UpdateEmployeeLoanDto,
+  ) {
+    await this.getEmployeeForEarnings(user, employeeId);
+    const existing = await this.prisma.employeeLoan.findFirst({
+      where: { id: loanId, employeeId },
+    });
+    if (!existing) throw new BadRequestException('Loan not found');
+
+    const loan = await this.prisma.employeeLoan.update({
+      where: { id: loanId },
+      data: {
+        ...(dto.principalAmount === undefined
+          ? {}
+          : { principalAmount: dto.principalAmount }),
+        ...(dto.monthlyInstallment === undefined
+          ? {}
+          : { monthlyInstallment: dto.monthlyInstallment }),
+        ...(dto.startCycleMonth === undefined
+          ? {}
+          : { startCycleMonth: dto.startCycleMonth }),
+        ...(dto.numberOfInstallments === undefined
+          ? {}
+          : { numberOfInstallments: dto.numberOfInstallments }),
+        ...(dto.description === undefined
+          ? {}
+          : { description: dto.description.trim() || null }),
+        ...(dto.status === undefined ? {} : { status: dto.status }),
+      },
+    });
+    return this.serializeLoan(loan);
+  }
+
+  async deleteEmployeeLoan(
+    user: CurrentUser,
+    employeeId: string,
+    loanId: string,
+  ) {
+    await this.getEmployeeForEarnings(user, employeeId);
+    const result = await this.prisma.employeeLoan.deleteMany({
+      where: { id: loanId, employeeId },
+    });
+    if (!result.count) throw new BadRequestException('Loan not found');
+    return { id: loanId, removed: true };
+  }
+
+  private serializeLoan(loan: {
+    id: string;
+    employeeId: string;
+    description: string | null;
+    principalAmount: unknown;
+    monthlyInstallment: unknown;
+    startCycleMonth: string;
+    numberOfInstallments: number;
+    status: EmployeeLoanStatus;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      ...loan,
+      principalAmount: String(loan.principalAmount),
+      monthlyInstallment: String(loan.monthlyInstallment),
     };
   }
 

@@ -13,28 +13,30 @@ export async function downloadPayrollXlsx(report: PayrollReport) {
   workbook.creator = "Bembex Attendance Portal";
   const sheet = workbook.addWorksheet("Payroll", { views: [{ state: "frozen", ySplit: 4 }] });
 
-  sheet.mergeCells("A1:Q1");
+  sheet.mergeCells("A1:T1");
   sheet.getCell("A1").value = "MONTHLY PAYROLL REPORT";
-  sheet.mergeCells("A2:Q2");
+  sheet.mergeCells("A2:T2");
   sheet.getCell("A2").value = `Cycle: ${report.cycleStart} to ${report.cycleEnd} · Assessed through: ${report.calculatedThrough ?? "Not started"}`;
   sheet.addRow([]);
-  sheet.addRow(["EMPLOYEE CODE", "EMPLOYEE", "DEPARTMENT", "MONTHLY SALARY", "ALLOWANCE", "ALLOWANCE DEDUCTED", "PAYROLL DAYS", "ASSESSED WORKING DAYS", "PRESENT", "ABSENT", "HALF DAYS", "HALF-DAY DEDUCTION", "TOTAL DEDUCTION DAYS", "DEDUCTION AMOUNT", "PAYABLE SALARY", "ABSENT DATES", "HALF-DAY DATES"]);
+  sheet.addRow(["EMPLOYEE CODE", "EMPLOYEE", "DEPARTMENT", "MONTHLY SALARY", "ALLOWANCE", "BONUS", "COMMISSION", "LOAN INSTALLMENT", "ALLOWANCE DEDUCTED", "PAYROLL DAYS", "ASSESSED WORKING DAYS", "PRESENT", "ABSENT", "HALF DAYS", "HALF-DAY DEDUCTION", "TOTAL DEDUCTION DAYS", "DEDUCTION AMOUNT", "PAYABLE SALARY", "ABSENT DATES", "HALF-DAY DATES"]);
 
   report.rows.forEach((row) => sheet.addRow([
     row.employeeCode, row.employee, row.department, row.monthlySalary, row.allowance,
+    row.bonusAmount, row.commissionAmount, row.loanDeductionAmount,
     row.allowanceDeductionAmount, row.payrollDays, row.assessedWorkingDays,
-    row.presentDays, row.absentDays, row.halfDays, row.halfDayDeductionDays,
-    row.totalDeductionDays, row.deductionAmount, row.payableSalary,
+    row.presentDays, row.absentDays,
+    row.halfDays, row.halfDayDeductionDays, row.totalDeductionDays,
+    row.deductionAmount, row.payableSalary,
     row.attendanceDetails.filter((detail) => detail.status === "ABSENT").map((detail) => `${detail.date} (${detail.day})`).join("; "),
     row.attendanceDetails.filter((detail) => detail.status === "HALF_DAY").map((detail) => `${detail.date} (${detail.day})`).join("; "),
   ]));
 
   sheet.addRow([]);
-  const summaryRow = sheet.addRow(["TOTAL", "", "", report.summary.grossSalary, "", "", "", "", "", "", "", "", "", report.summary.deductions, report.summary.payableSalary]);
+  const summaryRow = sheet.addRow(["TOTAL", "", "", report.summary.grossSalary, "", "", "", "", "", "", "", "", "", "", "", "", report.summary.deductions, report.summary.payableSalary]);
   sheet.mergeCells(summaryRow.number, 1, summaryRow.number, 3);
-  [16, 24, 20, 18, 18, 20, 14, 15, 12, 10, 12, 20, 22, 20, 20, 38, 38].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
-  [4, 5, 6, 14, 15].forEach((column) => { sheet.getColumn(column).numFmt = '"PKR" #,##0.00'; });
-  sheet.autoFilter = { from: "A4", to: "Q4" };
+  [16, 24, 20, 18, 18, 16, 16, 18, 20, 14, 15, 12, 10, 12, 20, 22, 20, 20, 38, 38].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  [4, 5, 6, 7, 8, 9, 17, 18].forEach((column) => { sheet.getColumn(column).numFmt = '"PKR" #,##0.00'; });
+  sheet.autoFilter = { from: "A4", to: "T4" };
   sheet.getRow(1).height = 30;
   sheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FFFFFFFF" } };
   sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF171717" } };

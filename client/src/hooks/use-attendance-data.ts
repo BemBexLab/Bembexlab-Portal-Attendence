@@ -26,6 +26,15 @@ import {
   removeScheduledAttendanceStatus,
   updateEmployeeStatus,
   updateEmployeeSalary,
+  getEmployeeEarnings,
+  createEmployeeEarning,
+  updateEmployeeEarningStatus,
+  deleteEmployeeEarning,
+  getEmployeeLoans,
+  getAllEmployeeLoans,
+  createEmployeeLoan,
+  updateEmployeeLoan,
+  deleteEmployeeLoan,
   updateEmployeeCredentials,
   updateEmployeeRequestStatus,
   getShifts,
@@ -33,6 +42,7 @@ import {
   updateShift,
   deleteShift,
   assignEmployeeShift,
+  backfillDeviceAttendance,
 } from "@/services/attendance-service";
 
 export const attendanceKeys = {
@@ -172,7 +182,7 @@ export function useEmployeeRequests(status?: "PENDING" | "APPROVED" | "REJECTED"
     queryKey: ["requests", status ?? "all"],
     queryFn: () => getEmployeeRequests(status),
     refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -218,7 +228,7 @@ export function useDirectDeviceAttendance(
     queryKey: ["devices", deviceId, "historical-attendance", search, from, to],
     queryFn: () => getDirectDeviceAttendance(deviceId, { search, from, to }),
     enabled: true,
-    staleTime: 0,
+    staleTime: 60_000,
   });
 }
 
@@ -355,6 +365,110 @@ export function useUpdateEmployeeSalary() {
   });
 }
 
+export function useEmployeeEarnings(employeeId: string, month?: string) {
+  return useQuery({
+    queryKey: ["employee-earnings", employeeId, month ?? "all"],
+    queryFn: () => getEmployeeEarnings({ employeeId, month }),
+    enabled: Boolean(employeeId),
+  });
+}
+
+export function useCreateEmployeeEarning() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createEmployeeEarning,
+    onSuccess: (earning) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee-earnings", earning.employeeId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
+    },
+  });
+}
+
+export function useUpdateEmployeeEarningStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateEmployeeEarningStatus,
+    onSuccess: (earning) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee-earnings", earning.employeeId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
+    },
+  });
+}
+
+export function useDeleteEmployeeEarning() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteEmployeeEarning,
+    onSuccess: (_, input) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee-earnings", input.employeeId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
+    },
+  });
+}
+
+export function useEmployeeLoans(employeeId: string) {
+  return useQuery({
+    queryKey: ["employee-loans", employeeId],
+    queryFn: () => getEmployeeLoans(employeeId),
+    enabled: Boolean(employeeId),
+  });
+}
+
+export function useAllEmployeeLoans() {
+  return useQuery({
+    queryKey: ["employee-loans", "all"],
+    queryFn: getAllEmployeeLoans,
+  });
+}
+
+export function useCreateEmployeeLoan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createEmployeeLoan,
+    onSuccess: (loan) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee-loans", loan.employeeId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["employee-loans", "all"] });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
+    },
+  });
+}
+
+export function useUpdateEmployeeLoan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateEmployeeLoan,
+    onSuccess: (loan) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee-loans", loan.employeeId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["employee-loans", "all"] });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
+    },
+  });
+}
+
+export function useDeleteEmployeeLoan() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteEmployeeLoan,
+    onSuccess: (_, input) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee-loans", input.employeeId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["employee-loans", "all"] });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
+    },
+  });
+}
+
 export function useDevices() {
   return useQuery({
     queryKey: attendanceKeys.devices,
@@ -432,6 +546,22 @@ export function useSyncDeviceAttendance() {
 
   return useMutation({
     mutationFn: syncDeviceAttendance,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
+        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
+    },
+  });
+}
+
+export function useBackfillDeviceAttendance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: backfillDeviceAttendance,
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),

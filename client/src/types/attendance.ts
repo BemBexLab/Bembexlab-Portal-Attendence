@@ -29,6 +29,19 @@ export type Employee = {
   } | null;
 };
 
+export type EmployeeEarning = {
+  id: string;
+  employeeId: string;
+  type: "BONUS" | "COMMISSION";
+  status: "PENDING" | "APPROVED" | "PAID" | "CANCELLED";
+  amount: string;
+  percentage: string | null;
+  payrollCycleMonth: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type EmployeeCredential = {
   employeeId: string;
   employeeCode: string;
@@ -82,9 +95,12 @@ export type PayrollRow = {
   department: string;
   monthlySalary: number;
   allowance: number;
+  bonusAmount: number;
+  commissionAmount: number;
   grossSalary: number;
   salaryDeductionAmount: number;
   allowanceDeductionAmount: number;
+  loanDeductionAmount: number;
   payrollDays: number;
   workingDays: number;
   assessedWorkingDays: number;
@@ -118,6 +134,24 @@ export type PayrollReport = {
     payableSalary: number;
   };
   rows: PayrollRow[];
+};
+
+export type EmployeeLoan = {
+  id: string;
+  employeeId: string;
+  description: string | null;
+  principalAmount: string;
+  monthlyInstallment: string;
+  startCycleMonth: string;
+  numberOfInstallments: number;
+  status: "ACTIVE" | "PAUSED" | "PAID" | "CANCELLED";
+  createdAt: string;
+  updatedAt: string;
+  employee?: {
+    id: string;
+    employeeCode: string;
+    name: string;
+  };
 };
 
 export type EmployeeHistoryReport = {
@@ -387,6 +421,7 @@ export type DeductionRow = {
   monthlySalary: number;
   payrollDays: number;
   dailyRate: number;
+  loanDeductionAmount: number;
   deductionAmount: number;
   calculatedThrough: string | null;
 };

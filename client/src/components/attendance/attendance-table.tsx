@@ -58,7 +58,7 @@ function formatStatus(status: AttendanceStatus) {
 function getPayrollCycleMonth(date: string) {
   const value = new Date(`${date}T00:00:00.000Z`);
 
-  if (Number(date.slice(8, 10)) < 25) {
+  if (Number(date.slice(8, 10)) < 26) {
     value.setUTCMonth(value.getUTCMonth() - 1);
   }
 
@@ -70,7 +70,7 @@ function getPayrollCycle(month: string) {
     return { from: "", to: "" };
   }
 
-  const from = `${month}-25`;
+  const from = `${month}-26`;
   const end = new Date(`${from}T00:00:00.000Z`);
   end.setUTCMonth(end.getUTCMonth() + 1);
 

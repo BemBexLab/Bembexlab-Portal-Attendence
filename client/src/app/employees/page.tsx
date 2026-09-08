@@ -8,6 +8,11 @@ import {
   Check,
   ChevronDown,
   Filter,
+  MoreHorizontal,
+  SlidersHorizontal,
+  X,
+  Pencil,
+  Plus,
   Search,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -20,15 +25,21 @@ import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
 import {
   useAssignEmployeeShift,
+  useCreateEmployeeEarning,
+  useDeleteEmployeeEarning,
   useEmployees,
+  useUpdateEmployeeEarningStatus,
   useShifts,
   useUpdateEmployeeSalary,
   useUpdateEmployeeStatus,
 } from "@/hooks/use-attendance-data";
 import { usePayrollReport } from "@/hooks/use-reports";
 import { getEmployeeHistory } from "@/services/report-service";
+import { getEmployeeEarnings } from "@/services/attendance-service";
+import type { Employee, EmployeeEarning, PayrollRow } from "@/types/attendance";
 
 type EmployeeFilterColumn =
+  | "all"
   | "shift"
   | "salary"
   | "status";
@@ -68,6 +79,9 @@ export default function EmployeesPage() {
   const assignShift = useAssignEmployeeShift();
   const updateStatus = useUpdateEmployeeStatus();
   const updateSalary = useUpdateEmployeeSalary();
+  const createEarning = useCreateEmployeeEarning();
+  const updateEarningStatus = useUpdateEmployeeEarningStatus();
+  const deleteEarning = useDeleteEmployeeEarning();
   // Payroll is expensive and is only needed by the employee details popup.
   // Avoid competing with the essential employee and shift requests on load.
   const payroll = usePayrollReport(undefined, false);
@@ -104,6 +118,13 @@ export default function EmployeesPage() {
     left: 0,
     width: 280,
   });
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedPayrollRow, setSelectedPayrollRow] = useState<PayrollRow | null>(null);
+  const [selectedAttendanceEvents, setSelectedAttendanceEvents] = useState<
+    Array<{ date: string; status: "Late arrival" | "Absent" }>
+  >([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [showCompensationEditor, setShowCompensationEditor] = useState(false);
   const salaryCeiling = useMemo(
     () =>
       Math.max(
@@ -210,6 +231,10 @@ export default function EmployeesPage() {
     setStatusFilter("ALL");
   };
   const clearColumnFilter = (column: EmployeeFilterColumn) => {
+    if (column === "all") {
+      clearColumnFilters();
+      return;
+    }
     if (column === "shift") setShiftFilter("ALL");
     if (column === "salary") {
       setMinimumSalary("");
@@ -230,6 +255,7 @@ export default function EmployeesPage() {
     setOpenFilter(null);
   };
   const isColumnFilterActive = (column: EmployeeFilterColumn) => {
+    if (column === "all") return hasColumnFilters;
     if (column === "shift") return shiftFilter !== "ALL";
     if (column === "salary") return Boolean(minimumSalary || maximumSalary);
     return statusFilter !== "ALL";
@@ -244,7 +270,7 @@ export default function EmployeesPage() {
     }
 
     const rect = element.getBoundingClientRect();
-    const width = column === "salary" ? 360 : 280;
+    const width = column === "salary" || column === "all" ? 360 : 280;
     setFilterMenuPosition({
       top: rect.bottom + 8,
       left: Math.min(
@@ -285,6 +311,120 @@ export default function EmployeesPage() {
       window.removeEventListener("scroll", closeOnViewportChange, true);
     };
   }, [openFilter]);
+  const manageEmployeeEarnings = async (
+    employee: NonNullable<typeof employees.data>[number],
+  ) => {
+    const currentDate = new Date();
+    if (currentDate.getDate() < 26) {
+      currentDate.setMonth(currentDate.getMonth() - 1);
+    }
+    const defaultMonth = payroll.data?.month ?? currentDate.toISOString().slice(0, 7);
+    const earnings = await getEmployeeEarnings({
+      employeeId: employee.id,
+      month: defaultMonth,
+    }).catch(() => [] as EmployeeEarning[]);
+    const earningRows = earnings.length
+      ? earnings
+          .map(
+            (earning) => `
+              <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;border-top:1px solid #e5e7eb;padding:10px 0;text-align:left">
+                <div><strong style="font-size:13px">${earning.type === "BONUS" ? "Bonus" : "Commission"}</strong><div style="color:#6b7280;font-size:12px">${earning.percentage ? `${earning.percentage}% of monthly salary` : formatMoney(Number(earning.amount))}${earning.description ? ` · ${earning.description}` : ""}</div></div>
+                <div style="display:flex;align-items:center;gap:6px"><select data-earning-status="${earning.id}" style="border:1px solid #d1d5db;border-radius:6px;padding:5px;font-size:12px"><option value="PENDING" ${earning.status === "PENDING" ? "selected" : ""}>Pending</option><option value="APPROVED" ${earning.status === "APPROVED" ? "selected" : ""}>Approved</option><option value="PAID" ${earning.status === "PAID" ? "selected" : ""}>Paid</option><option value="CANCELLED" ${earning.status === "CANCELLED" ? "selected" : ""}>Cancelled</option></select><button type="button" data-earning-delete="${earning.id}" style="border:1px solid #fecaca;border-radius:6px;color:#dc2626;padding:5px 8px;font-size:12px">Remove</button></div>
+              </div>`,
+          )
+          .join("")
+      : `<p style="padding:12px 0;color:#6b7280;font-size:13px;text-align:center">No bonus or commission entries for ${defaultMonth}.</p>`;
+
+    const result = await Swal.fire({
+      title: `Bonus / Commission · ${employee.name}`,
+      html: `<div style="text-align:left"><p style="margin:0 0 12px;color:#6b7280;font-size:12px">Payroll cycle</p><input id="earning-month" type="month" value="${defaultMonth}" style="width:100%;height:38px;border:1px solid #d1d5db;border-radius:7px;padding:0 10px;margin-bottom:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><select id="earning-type" style="height:38px;border:1px solid #d1d5db;border-radius:7px;padding:0 8px"><option value="BONUS">Bonus</option><option value="COMMISSION">Commission</option></select><input id="earning-amount" type="number" min="0" step="0.01" placeholder="Fixed amount" style="height:38px;border:1px solid #d1d5db;border-radius:7px;padding:0 10px"></div><input id="earning-percentage" type="number" min="0" max="100" step="0.01" placeholder="Commission percentage (optional)" style="width:100%;height:38px;border:1px solid #d1d5db;border-radius:7px;padding:0 10px;margin-top:8px"><input id="earning-description" type="text" maxlength="255" placeholder="Description (optional)" style="width:100%;height:38px;border:1px solid #d1d5db;border-radius:7px;padding:0 10px;margin-top:8px"><div style="margin-top:18px;border-top:1px solid #e5e7eb;padding-top:6px"><p style="margin:0;color:#374151;font-size:12px;font-weight:700">Existing entries</p>${earningRows}</div></div>`,
+      width: 640,
+      showCancelButton: true,
+      confirmButtonText: "Add earning",
+      cancelButtonText: "Close",
+      confirmButtonColor: "#171717",
+      reverseButtons: true,
+      focusCancel: true,
+      preConfirm: () => {
+        const popup = Swal.getPopup();
+        const amount = Number(
+          popup?.querySelector<HTMLInputElement>("#earning-amount")?.value ?? "",
+        );
+        const percentageInput = popup?.querySelector<HTMLInputElement>(
+          "#earning-percentage",
+        )?.value;
+        const percentage = percentageInput ? Number(percentageInput) : undefined;
+        if (!Number.isFinite(amount) || amount < 0) {
+          Swal.showValidationMessage("Enter a valid fixed amount.");
+          return false;
+        }
+        if (
+          percentage !== undefined &&
+          (!Number.isFinite(percentage) || percentage < 0 || percentage > 100)
+        ) {
+          Swal.showValidationMessage("Commission percentage must be between 0 and 100.");
+          return false;
+        }
+        return {
+          type: popup?.querySelector<HTMLSelectElement>("#earning-type")?.value as EmployeeEarning["type"],
+          amount,
+          percentage,
+          payrollCycleMonth: popup?.querySelector<HTMLInputElement>("#earning-month")?.value ?? defaultMonth,
+          description: popup?.querySelector<HTMLInputElement>("#earning-description")?.value ?? "",
+        };
+      },
+      didOpen: (popup) => {
+        popup.querySelectorAll<HTMLButtonElement>("[data-earning-delete]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const earningId = button.dataset.earningDelete;
+            if (!earningId) return;
+            const confirmation = await Swal.fire({
+              title: "Remove earning?",
+              text: "This entry will be removed from the selected payroll cycle.",
+              icon: "warning",
+              showCancelButton: true,
+              confirmButtonText: "Remove",
+              cancelButtonText: "Cancel",
+              confirmButtonColor: "#dc2626",
+            });
+            if (!confirmation.isConfirmed) return;
+            await deleteEarning.mutateAsync({ employeeId: employee.id, earningId });
+            Swal.close();
+            await manageEmployeeEarnings(employee);
+          });
+        });
+        popup.querySelectorAll<HTMLSelectElement>("[data-earning-status]").forEach((select) => {
+          select.addEventListener("change", async () => {
+            const earningId = select.dataset.earningStatus;
+            if (!earningId) return;
+            await updateEarningStatus.mutateAsync({
+              employeeId: employee.id,
+              earningId,
+              status: select.value as EmployeeEarning["status"],
+            });
+          });
+        });
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) return;
+    try {
+      await createEarning.mutateAsync({ employeeId: employee.id, ...result.value });
+      await Swal.fire({
+        title: "Earning added",
+        icon: "success",
+        timer: 1400,
+        showConfirmButton: false,
+      });
+    } catch {
+      await Swal.fire({
+        title: "Could not add earning",
+        text: "Please check the values and try again.",
+        icon: "error",
+        confirmButtonColor: "#171717",
+      });
+    }
+  };
   const showEmployeeInfo = async (
     employee: NonNullable<typeof employees.data>[number],
   ) => {
@@ -339,6 +479,45 @@ export default function EmployeesPage() {
         : "Payroll data is currently unavailable",
     });
   };
+  const openEmployeeDrawer = async (
+    employee: NonNullable<typeof employees.data>[number],
+  ) => {
+    setSelectedEmployee(employee);
+    setSelectedPayrollRow(null);
+    setSelectedAttendanceEvents([]);
+    setShowCompensationEditor(false);
+    setDetailsLoading(true);
+    try {
+      const payrollData = payroll.data ?? (await payroll.refetch()).data;
+      const payrollRow = payrollData?.rows.find(
+        (row) => row.employeeId === employee.id,
+      ) ?? null;
+      const history = payrollData
+        ? await getEmployeeHistory(
+            employee.id,
+            payrollData.cycleStart,
+            payrollData.cycleEnd,
+          ).catch(() => undefined)
+        : undefined;
+      const lateEvents = (history?.rows ?? [])
+        .filter((row) => row.status === "LATE")
+        .map((row) => ({ date: row.date, status: "Late arrival" as const }));
+      const absentEvents = (payrollRow?.attendanceDetails ?? [])
+        .filter((row) => row.status === "ABSENT")
+        .map((row) => ({ date: row.date, status: "Absent" as const }));
+      setSelectedPayrollRow(payrollRow);
+      setSelectedAttendanceEvents(
+        [...lateEvents, ...absentEvents].sort((left, right) =>
+          right.date.localeCompare(left.date),
+        ),
+      );
+    } catch {
+      setSelectedPayrollRow(null);
+      setSelectedAttendanceEvents([]);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
   const toggleStatusMenu = (employeeId: string, element: HTMLButtonElement) => {
     if (openStatusId === employeeId) {
       setOpenStatusId(null);
@@ -380,6 +559,9 @@ export default function EmployeesPage() {
         employeeId: employee.id,
         isActive,
       });
+      setSelectedEmployee((current) =>
+        current?.id === employee.id ? { ...current, isActive } : current,
+      );
       await Swal.fire({
         title: `Employee ${isActive ? "activated" : "deactivated"}`,
         text: `${employee.name} is now ${isActive ? "active" : "inactive"}.`,
@@ -565,15 +747,39 @@ export default function EmployeesPage() {
       description="Employee roster mapped to biometric device users."
       title="Employees"
     >
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Total employees", employees.data?.length ?? 0, "bg-slate-50 text-slate-700"],
+          ["Active", (employees.data ?? []).filter((employee) => employee.isActive).length, "bg-emerald-50 text-emerald-700"],
+          ["Inactive", (employees.data ?? []).filter((employee) => !employee.isActive).length, "bg-amber-50 text-amber-700"],
+          ["Without shift", (employees.data ?? []).filter((employee) => !employee.shift).length, "bg-sky-50 text-sky-700"],
+        ].map(([label, value, tone]) => (
+          <div className={`rounded-xl border border-border px-4 py-3 ${tone}`} key={String(label)}>
+            <p className="text-xs font-medium uppercase tracking-wide opacity-75">{label}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+          </div>
+        ))}
+      </div>
       <Panel>
         <PanelHeader className="flex-col items-stretch sm:flex-row sm:items-center">
-          <div>
-            <h2 className="text-sm font-semibold">Employee directory</h2>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Employee directory</h2>
+              <Badge tone="neutral">{filteredEmployees.length} shown</Badge>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Device user IDs are used for raw punch matching.
+              Search, filter, and select an employee to manage their complete profile.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <button
+              className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium transition hover:bg-muted ${hasColumnFilters ? "border-foreground bg-muted" : "border-border bg-background"}`}
+              onClick={(event) => toggleColumnFilter("all", event.currentTarget)}
+              type="button"
+            >
+              <SlidersHorizontal className="size-4" />
+              Filters{hasColumnFilters ? " active" : ""}
+            </button>
             {hasColumnFilters ? (
               <button
                 className="h-9 shrink-0 rounded-md border border-border bg-background px-3 text-xs font-medium transition hover:bg-muted"
@@ -596,8 +802,16 @@ export default function EmployeesPage() {
           </div>
         </PanelHeader>
         <PanelBody className="p-0">
+          {hasColumnFilters ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/20 px-4 py-2.5 text-xs">
+              <span className="font-medium text-muted-foreground">Active filters:</span>
+              {shiftFilter !== "ALL" ? <Badge tone="blue">Shift selected</Badge> : null}
+              {minimumSalary || maximumSalary ? <Badge tone="blue">Salary range</Badge> : null}
+              {statusFilter !== "ALL" ? <Badge tone={statusFilter === "ACTIVE" ? "green" : "neutral"}>{statusFilter === "ACTIVE" ? "Active" : "Inactive"}</Badge> : null}
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] text-left text-sm">
+            <table className="w-full min-w-[1220px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="w-16 px-4 py-3 font-medium">S.No</th>
@@ -677,6 +891,7 @@ export default function EmployeesPage() {
                     </button>
                   </th>
                   <th className="px-4 py-3 font-medium">Allowance</th>
+                  <th className="px-4 py-3 font-medium">Bonus / Commission</th>
                   <th className="px-2 py-2 font-medium">
                     <button
                       className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 transition hover:bg-muted ${isColumnFilterActive("status") ? "bg-muted text-foreground" : ""}`}
@@ -690,14 +905,23 @@ export default function EmployeesPage() {
                       <Filter className="size-3.5" />
                     </button>
                   </th>
+                  <th className="w-16 px-3 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredEmployees.map((employee, index) => (
+                {employees.isLoading
+                  ? Array.from({ length: 6 }, (_, index) => (
+                      <tr key={`employee-skeleton-${index}`}>
+                        <td className="px-4 py-5" colSpan={9}>
+                          <div className="h-5 w-full animate-pulse rounded-md bg-muted" />
+                        </td>
+                      </tr>
+                    ))
+                  : filteredEmployees.map((employee, index) => (
                   <tr
                     className="cursor-pointer hover:bg-muted/40"
                     key={employee.id}
-                    onClick={() => void showEmployeeInfo(employee)}
+                    onClick={() => void openEmployeeDrawer(employee)}
                   >
                     <td className="px-4 py-3 font-medium tabular-nums">
                       {index + 1}
@@ -710,9 +934,21 @@ export default function EmployeesPage() {
                       className="px-4 py-3"
                       onClick={(event) => event.stopPropagation()}
                     >
+                      <div className="pointer-events-none mb-1">
+                        {employee.shift ? (
+                          <>
+                            <p className="font-medium">{employee.shift.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatTime(employee.shift.startMinutes)} → {formatTime(employee.shift.endMinutes)}
+                            </p>
+                          </>
+                        ) : (
+                          <Badge tone="neutral">Unassigned</Badge>
+                        )}
+                      </div>
                       <Select
                         ariaLabel={`Select shift for ${employee.name}`}
-                        className="w-56"
+                        className="hidden"
                         disabled={assigningEmployeeId === employee.id}
                         onChange={(shiftId) =>
                           void assignEmployeeShift(employee, shiftId)
@@ -730,91 +966,28 @@ export default function EmployeesPage() {
                     <td className="px-4 py-3">
                       {employee.deviceUserId ?? "Not assigned"}
                     </td>
-                    <td
-                      className="px-4 py-3"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="relative">
-                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                            PKR
-                          </span>
-                          <input
-                            aria-label={`${employee.name} monthly salary`}
-                            className="h-8 w-36 rounded-md border border-input bg-background pl-10 pr-2 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring/20"
-                            min="0"
-                            onChange={(event) =>
-                              setSalaryDrafts((current) => ({
-                                ...current,
-                                [employee.id]: event.target.value,
-                              }))
-                            }
-                            step="0.01"
-                            type="number"
-                            value={
-                              salaryDrafts[employee.id] ?? employee.monthlySalary
-                            }
-                          />
-                        </div>
-                        <button
-                          aria-label={`Save ${employee.name} salary`}
-                          className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                          disabled={
-                            savingSalaryEmployeeId !== null ||
-                            salaryDrafts[employee.id] === undefined ||
-                            salaryDrafts[employee.id] === employee.monthlySalary ||
-                            Number(salaryDrafts[employee.id]) < 0
-                          }
-                          onClick={() => void saveEmployeeSalary(employee)}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          type="button"
-                        >
-                          <Check className="size-4" />
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 tabular-nums">
+                      <span className="font-medium">{formatMoney(Number(employee.monthlySalary))}</span>
+                      <p className="text-xs text-muted-foreground">Base monthly pay</p>
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      <span className="font-medium">{formatMoney(Number(employee.allowance))}</span>
+                      <p className="text-xs text-muted-foreground">Deducted on absence</p>
                     </td>
                     <td
                       className="px-4 py-3"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="relative">
-                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                            PKR
-                          </span>
-                          <input
-                            aria-label={`${employee.name} allowance`}
-                            className="h-8 w-36 rounded-md border border-input bg-background pl-10 pr-2 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring/20"
-                            min="0"
-                            onChange={(event) =>
-                              setAllowanceDrafts((current) => ({
-                                ...current,
-                                [employee.id]: event.target.value,
-                              }))
-                            }
-                            step="0.01"
-                            type="number"
-                            value={
-                              allowanceDrafts[employee.id] ?? employee.allowance
-                            }
-                          />
-                        </div>
-                        <button
-                          aria-label={`Save ${employee.name} allowance`}
-                          className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                          disabled={
-                            savingSalaryEmployeeId !== null ||
-                            allowanceDrafts[employee.id] === undefined ||
-                            allowanceDrafts[employee.id] === employee.allowance ||
-                            Number(allowanceDrafts[employee.id]) < 0
-                          }
-                          onClick={() => void saveEmployeeAllowance(employee)}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          type="button"
-                        >
-                          <Check className="size-4" />
-                        </button>
-                      </div>
+                      <button
+                        aria-label={`Manage ${employee.name} bonus and commission`}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:bg-muted"
+                        onClick={() => void manageEmployeeEarnings(employee)}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        type="button"
+                      >
+                        <Plus className="size-3.5" />
+                        Manage
+                      </button>
                     </td>
                     <td
                       className="px-4 py-3"
@@ -886,13 +1059,26 @@ export default function EmployeesPage() {
                           : null}
                       </div>
                     </td>
+                    <td
+                      className="px-3 py-3 text-right"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        aria-label={`Open actions for ${employee.name}`}
+                        className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-background transition hover:bg-muted"
+                        onClick={() => void openEmployeeDrawer(employee)}
+                        type="button"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </button>
+                    </td>
                   </tr>
-                ))}
+                  ))}
                 {!filteredEmployees.length && !employees.isLoading ? (
                   <tr>
                     <td
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
-                      colSpan={7}
+                      colSpan={9}
                     >
                       No employees match the selected filters.
                     </td>
@@ -903,6 +1089,160 @@ export default function EmployeesPage() {
           </div>
         </PanelBody>
       </Panel>
+      {selectedEmployee ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-[80] bg-black/35 backdrop-blur-[1px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedEmployee(null);
+          }}
+          role="dialog"
+        >
+          <aside className="ml-auto flex h-[100dvh] max-h-[100dvh] w-full max-w-xl flex-col overflow-hidden border-l border-border bg-card shadow-2xl">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className="truncate text-xl font-semibold">{selectedEmployee.name}</h2>
+                  <Badge tone={selectedEmployee.isActive ? "green" : "neutral"}>
+                    {selectedEmployee.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Employee ID {selectedEmployee.employeeCode} · Device {selectedEmployee.deviceUserId ?? "Not assigned"}
+                </p>
+              </div>
+              <button
+                aria-label="Close employee details"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border transition hover:bg-muted"
+                onClick={() => setSelectedEmployee(null)}
+                type="button"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">
+              <section className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-border bg-muted/30 p-4 sm:col-span-2">
+                  <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assigned shift</p>
+                      <p className="mt-1 font-semibold">
+                        {selectedEmployee.shift
+                          ? `${selectedEmployee.shift.name} · ${formatTime(selectedEmployee.shift.startMinutes)} → ${formatTime(selectedEmployee.shift.endMinutes)}`
+                          : "No shift assigned"}
+                      </p>
+                    </div>
+                    <Select
+                      ariaLabel={`Change shift for ${selectedEmployee.name}`}
+                      className="w-44"
+                      disabled={assigningEmployeeId === selectedEmployee.id}
+                      onChange={(shiftId) => void assignEmployeeShift(selectedEmployee, shiftId)}
+                      options={(shifts.data ?? [])
+                        .filter((shift) => shift.isActive)
+                        .map((shift) => ({
+                          value: shift.id,
+                          label: `${shift.name} · ${formatTime(shift.startMinutes)}–${formatTime(shift.endMinutes)}`,
+                        }))}
+                      placeholder="Choose shift"
+                      value={selectedEmployee.shift?.id ?? ""}
+                    />
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payable this cycle</p>
+                  <p className="mt-1 text-xl font-semibold text-emerald-700">
+                    {detailsLoading ? "Loading…" : selectedPayrollRow ? formatMoney(selectedPayrollRow.payableSalary) : "Not calculated"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attendance exceptions</p>
+                  <p className="mt-1 text-xl font-semibold">
+                    {detailsLoading ? "Loading…" : selectedAttendanceEvents.length}
+                  </p>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">Compensation</h3>
+                    <p className="text-xs text-muted-foreground">Salary and allowance are saved in the VPS database.</p>
+                  </div>
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition hover:bg-muted"
+                    onClick={() => {
+                      setSalaryDrafts((current) => ({ ...current, [selectedEmployee.id]: selectedEmployee.monthlySalary }));
+                      setAllowanceDrafts((current) => ({ ...current, [selectedEmployee.id]: selectedEmployee.allowance }));
+                      setShowCompensationEditor((current) => !current);
+                    }}
+                    type="button"
+                  >
+                    <Pencil className="size-3.5" />
+                    {showCompensationEditor ? "Close" : "Edit"}
+                  </button>
+                </div>
+                {showCompensationEditor ? (
+                  <div className="grid gap-3 p-4 sm:grid-cols-2">
+                    <label className="text-xs text-muted-foreground">
+                      Monthly salary
+                      <input
+                        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/20"
+                        min="0"
+                        onChange={(event) => setSalaryDrafts((current) => ({ ...current, [selectedEmployee.id]: event.target.value }))}
+                        step="0.01"
+                        type="number"
+                        value={salaryDrafts[selectedEmployee.id] ?? selectedEmployee.monthlySalary}
+                      />
+                      <button className="mt-2 h-9 w-full rounded-md bg-foreground px-3 text-xs font-medium text-background disabled:opacity-50" disabled={savingSalaryEmployeeId !== null} onClick={() => void saveEmployeeSalary(selectedEmployee)} type="button">Save salary</button>
+                    </label>
+                    <label className="text-xs text-muted-foreground">
+                      Allowance
+                      <input
+                        className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/20"
+                        min="0"
+                        onChange={(event) => setAllowanceDrafts((current) => ({ ...current, [selectedEmployee.id]: event.target.value }))}
+                        step="0.01"
+                        type="number"
+                        value={allowanceDrafts[selectedEmployee.id] ?? selectedEmployee.allowance}
+                      />
+                      <button className="mt-2 h-9 w-full rounded-md border border-border px-3 text-xs font-medium transition hover:bg-muted disabled:opacity-50" disabled={savingSalaryEmployeeId !== null} onClick={() => void saveEmployeeAllowance(selectedEmployee)} type="button">Save allowance</button>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 p-4 sm:grid-cols-2">
+                    <div><p className="text-xs text-muted-foreground">Monthly salary</p><p className="mt-1 font-semibold tabular-nums">{formatMoney(Number(selectedEmployee.monthlySalary))}</p></div>
+                    <div><p className="text-xs text-muted-foreground">Allowance</p><p className="mt-1 font-semibold tabular-nums">{formatMoney(Number(selectedEmployee.allowance))}</p></div>
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-xl border border-border">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div><h3 className="text-sm font-semibold">Bonus and commission</h3><p className="text-xs text-muted-foreground">Manage cycle-specific earnings and approval status.</p></div>
+                  <button className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:opacity-90" onClick={() => void manageEmployeeEarnings(selectedEmployee)} type="button"><Plus className="size-3.5" />Manage</button>
+                </div>
+                <div className="grid gap-3 p-4 sm:grid-cols-2">
+                  <div><p className="text-xs text-muted-foreground">Bonus this cycle</p><p className="mt-1 font-semibold tabular-nums">{selectedPayrollRow ? formatMoney(selectedPayrollRow.bonusAmount) : "—"}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Commission this cycle</p><p className="mt-1 font-semibold tabular-nums">{selectedPayrollRow ? formatMoney(selectedPayrollRow.commissionAmount) : "—"}</p></div>
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-border">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div><h3 className="text-sm font-semibold">Late and absent history</h3><p className="text-xs text-muted-foreground">Current payroll cycle exceptions.</p></div>
+                  <Badge tone="neutral">{selectedAttendanceEvents.length}</Badge>
+                </div>
+                {detailsLoading ? <p className="p-5 text-center text-sm text-muted-foreground">Loading attendance history…</p> : selectedAttendanceEvents.length ? <div className="divide-y divide-border">{selectedAttendanceEvents.map((event) => { const formatted = formatHistoryDate(event.date); return <div className="flex items-center justify-between gap-3 px-4 py-3" key={`${event.date}-${event.status}`}><div><p className="text-sm font-medium">{formatted.day}</p><p className="text-xs text-muted-foreground">{formatted.date}</p></div><Badge tone={event.status === "Absent" ? "red" : "amber"}>{event.status}</Badge></div>; })}</div> : <p className="p-5 text-center text-sm text-muted-foreground">No late arrivals or absences in this cycle.</p>}
+              </section>
+            </div>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-card px-5 py-4">
+              <button className="rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted" onClick={() => void confirmEmployeeStatusChange(selectedEmployee, !selectedEmployee.isActive)} type="button">{selectedEmployee.isActive ? "Deactivate" : "Activate"}</button>
+              <button className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background transition hover:opacity-90" onClick={() => setSelectedEmployee(null)} type="button">Done</button>
+            </div>
+          </aside>
+        </div>
+      ) : null}
       {openFilter && typeof document !== "undefined"
         ? createPortal(
             <div
@@ -913,7 +1253,7 @@ export default function EmployeesPage() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold">
-                    Filter by {openFilter}
+                    {openFilter === "all" ? "Filter employees" : `Filter by ${openFilter}`}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {filteredEmployees.length} employee
@@ -929,6 +1269,40 @@ export default function EmployeesPage() {
                   Clear
                 </button>
               </div>
+
+              {openFilter === "all" ? (
+                <div className="space-y-3">
+                  <Select
+                    ariaLabel="Filter employees by shift"
+                    menuMinWidth={248}
+                    onChange={setShiftFilter}
+                    options={shiftFilterOptions}
+                    value={shiftFilter}
+                  />
+                  <Select
+                    ariaLabel="Filter employees by status"
+                    menuMinWidth={248}
+                    onChange={setStatusFilter}
+                    options={[
+                      { value: "ALL", label: "All statuses" },
+                      { value: "ACTIVE", label: "Active", indicatorClassName: "bg-emerald-500" },
+                      { value: "INACTIVE", label: "Inactive", indicatorClassName: "bg-slate-400" },
+                    ]}
+                    value={statusFilter}
+                  />
+                  <div className="rounded-lg bg-muted/60 px-3 py-2 text-center text-xs font-semibold tabular-nums">
+                    {formatMoney(salarySliderMinimumValue)} – {formatMoney(salarySliderMaximumValue)}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs text-muted-foreground">Minimum<input aria-label="Minimum salary slider" className="mt-1 w-full accent-foreground" max={salarySliderMaximum} min="0" onChange={(event) => setMinimumSalary(event.target.value)} step="1000" type="range" value={salarySliderMinimumValue} /></label>
+                    <label className="text-xs text-muted-foreground">Maximum<input aria-label="Maximum salary slider" className="mt-1 w-full accent-foreground" max={salarySliderMaximum} min={salarySliderMinimumValue} onChange={(event) => setMaximumSalary(event.target.value === String(salarySliderMaximum) ? "" : event.target.value)} step="1000" type="range" value={salarySliderMaximumValue} /></label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs text-muted-foreground">Minimum salary<input className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" min="0" onChange={(event) => setMinimumSalary(event.target.value)} placeholder="0" type="number" value={minimumSalary} /></label>
+                    <label className="text-xs text-muted-foreground">Maximum salary<input className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" min="0" onChange={(event) => setMaximumSalary(event.target.value)} placeholder={String(salaryCeiling)} type="number" value={maximumSalary} /></label>
+                  </div>
+                </div>
+              ) : null}
 
               {openFilter === "shift" ? (
                 <Select

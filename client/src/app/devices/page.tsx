@@ -17,6 +17,7 @@ import {
   useSyncDeviceAttendance,
   useTestDevice,
   useUpdateDevice,
+  useBackfillDeviceAttendance,
 } from "@/hooks/use-attendance-data";
 import type { DeviceSyncResult } from "@/types/attendance";
 
@@ -28,6 +29,7 @@ export default function DevicesPage() {
   const testDevice = useTestDevice();
   const fetchDeviceInfo = useFetchDeviceInfo();
   const syncDeviceAttendance = useSyncDeviceAttendance();
+  const backfillDeviceAttendance = useBackfillDeviceAttendance();
   const [syncResults, setSyncResults] = useState<
     Record<string, DeviceSyncResult>
   >({});
@@ -90,6 +92,19 @@ export default function DevicesPage() {
     setDeviceErrors((current) => ({ ...current, [deviceId]: "" }));
     try {
       const result = await syncDeviceAttendance.mutateAsync(deviceId);
+      setSyncResults((current) => ({ ...current, [deviceId]: result }));
+    } catch (error) {
+      setDeviceErrors((current) => ({
+        ...current,
+        [deviceId]: getErrorMessage(error),
+      }));
+    }
+  };
+
+  const handleBackfill = async (deviceId: string) => {
+    setDeviceErrors((current) => ({ ...current, [deviceId]: "" }));
+    try {
+      const result = await backfillDeviceAttendance.mutateAsync(deviceId);
       setSyncResults((current) => ({ ...current, [deviceId]: result }));
     } catch (error) {
       setDeviceErrors((current) => ({
@@ -348,6 +363,15 @@ export default function DevicesPage() {
                   >
                     <RefreshCw className="size-4" />
                     Sync
+                  </Button>
+                  <Button
+                    disabled={backfillDeviceAttendance.isPending}
+                    onClick={() => handleBackfill(device.id)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    <RefreshCw className="size-4" />
+                    Backfill
                   </Button>
                 </div>
               </article>

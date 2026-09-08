@@ -193,6 +193,40 @@ export class DevicesService {
     }
   }
 
+  async backfillAttendance(
+    user: CurrentUser,
+    id: string,
+  ): Promise<DeviceSyncResult> {
+    const device = await this.getAccessibleDevice(user, id);
+
+    try {
+      const result = await this.attendanceProcessingService.backfillDeviceAttendance(
+        device.id,
+      );
+
+      return {
+        fetched: result.fetched,
+        stored: result.stored,
+        duplicates: result.duplicates,
+        unmatched: result.unmatched,
+        skipped: 0,
+        dailyCalculated: result.dailyCalculated,
+      };
+    } catch (error) {
+      await this.markDeviceStatus(device.id, DeviceStatus.OFFLINE);
+
+      return {
+        fetched: 0,
+        stored: 0,
+        duplicates: 0,
+        unmatched: 0,
+        skipped: 1,
+        dailyCalculated: 0,
+        error: this.getErrorMessage(error),
+      };
+    }
+  }
+
   async getHistoricalAttendance(
     user: CurrentUser,
     id: string,

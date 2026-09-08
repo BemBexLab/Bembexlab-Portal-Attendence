@@ -10,6 +10,8 @@ import type {
   DirectDeviceAttendanceResponse,
   DeviceSyncResult,
   Employee,
+  EmployeeEarning,
+  EmployeeLoan,
   EmployeeCredential,
   EmployeeRequest,
   ReportAnalytics,
@@ -132,6 +134,111 @@ export async function updateEmployeeSalary(input: {
         : { monthlySalary: input.monthlySalary }),
       ...(input.allowance === undefined ? {} : { allowance: input.allowance }),
     },
+  );
+  return response.data;
+}
+
+export async function getEmployeeEarnings(input: {
+  employeeId: string;
+  month?: string;
+}) {
+  const response = await api.get<EmployeeEarning[]>(
+    `/users/employees/${input.employeeId}/earnings`,
+    { params: input.month ? { month: input.month } : undefined },
+  );
+  return response.data;
+}
+
+export async function createEmployeeEarning(input: {
+  employeeId: string;
+  type: EmployeeEarning["type"];
+  amount: number;
+  percentage?: number;
+  payrollCycleMonth: string;
+  description?: string;
+}) {
+  const { employeeId, ...data } = input;
+  const response = await api.post<EmployeeEarning>(
+    `/users/employees/${employeeId}/earnings`,
+    data,
+  );
+  return response.data;
+}
+
+export async function updateEmployeeEarningStatus(input: {
+  employeeId: string;
+  earningId: string;
+  status: EmployeeEarning["status"];
+}) {
+  const response = await api.patch<EmployeeEarning>(
+    `/users/employees/${input.employeeId}/earnings/${input.earningId}/status`,
+    { status: input.status },
+  );
+  return response.data;
+}
+
+export async function deleteEmployeeEarning(input: {
+  employeeId: string;
+  earningId: string;
+}) {
+  const response = await api.delete<{ id: string; removed: boolean }>(
+    `/users/employees/${input.employeeId}/earnings/${input.earningId}`,
+  );
+  return response.data;
+}
+
+export async function getEmployeeLoans(employeeId: string) {
+  const response = await api.get<EmployeeLoan[]>(
+    `/users/employees/${employeeId}/loans`,
+  );
+  return response.data;
+}
+
+export async function getAllEmployeeLoans() {
+  const response = await api.get<EmployeeLoan[]>('/users/employee-loans');
+  return response.data;
+}
+
+export async function createEmployeeLoan(input: {
+  employeeId: string;
+  principalAmount: number;
+  monthlyInstallment: number;
+  startCycleMonth: string;
+  numberOfInstallments: number;
+  description?: string;
+}) {
+  const { employeeId, ...data } = input;
+  const response = await api.post<EmployeeLoan>(
+    `/users/employees/${employeeId}/loans`,
+    data,
+  );
+  return response.data;
+}
+
+export async function updateEmployeeLoan(input: {
+  employeeId: string;
+  loanId: string;
+  principalAmount?: number;
+  monthlyInstallment?: number;
+  startCycleMonth?: string;
+  numberOfInstallments?: number;
+  description?: string;
+  status?: EmployeeLoan["status"];
+}) {
+  const { employeeId, loanId, ...data } = input;
+  const response = await api.patch<EmployeeLoan>(
+    `/users/employees/${employeeId}/loans/${loanId}`,
+    data,
+  );
+  return response.data;
+}
+
+export async function deleteEmployeeLoan(input: {
+  employeeId: string;
+  loanId: string;
+}) {
+  const response = await api.delete<{ id: string; removed: boolean }>(
+    `/users/employees/${input.employeeId}/loans/${input.loanId}`,
   );
   return response.data;
 }
@@ -270,6 +377,13 @@ export async function fetchDeviceInfo(deviceId: string) {
 export async function syncDeviceAttendance(deviceId: string) {
   const response = await api.post<DeviceSyncResult>(
     `/devices/${deviceId}/sync-attendance`,
+  );
+  return response.data;
+}
+
+export async function backfillDeviceAttendance(deviceId: string) {
+  const response = await api.post<DeviceSyncResult>(
+    `/devices/${deviceId}/backfill-attendance`,
   );
   return response.data;
 }

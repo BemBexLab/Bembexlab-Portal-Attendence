@@ -60,7 +60,7 @@ export function PayrollReportPanel() {
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">Monthly payroll</h2>
             <p className="text-xs text-muted-foreground">
-              Cycle: 25th to the following month&apos;s 25th. Weekends are off.
+              Cycle: 26th to the following month&apos;s 25th. Weekends are off.
             </p>
           </div>
         </div>
@@ -113,12 +113,15 @@ export function PayrollReportPanel() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px] text-left text-sm">
+          <table className="w-full min-w-[1570px] text-left text-sm">
             <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Employee</th>
                 <th className="px-4 py-3 font-medium">Monthly salary</th>
                 <th className="px-4 py-3 font-medium">Allowance</th>
+                <th className="px-4 py-3 font-medium">Bonus</th>
+                <th className="px-4 py-3 font-medium">Commission</th>
+                <th className="px-4 py-3 font-medium">Loan installment</th>
                 <th className="px-4 py-3 font-medium">Payroll days</th>
                 <th className="px-4 py-3 font-medium">Daily rate</th>
                 <th className="px-4 py-3 font-medium">Absent</th>
@@ -150,6 +153,9 @@ export function PayrollReportPanel() {
                   </td>
                   <td className="px-4 py-3 tabular-nums">{money(row.monthlySalary)}</td>
                   <td className="px-4 py-3 tabular-nums">{money(row.allowance)}</td>
+                  <td className="px-4 py-3 tabular-nums">{money(row.bonusAmount)}</td>
+                  <td className="px-4 py-3 tabular-nums">{money(row.commissionAmount)}</td>
+                  <td className="px-4 py-3 tabular-nums">{money(row.loanDeductionAmount)}</td>
                   <td className="px-4 py-3 tabular-nums">{row.payrollDays}</td>
                   <td className="px-4 py-3 tabular-nums">{money(row.dailyRate)}</td>
                   <td className="px-4 py-3 tabular-nums">{row.absentDays}</td>
@@ -229,6 +235,9 @@ export function PayrollReportPanel() {
                 ["Total deduction days", selectedEmployee.totalDeductionDays],
                 ["Gross salary", money(selectedEmployee.grossSalary)],
                 ["Allowance", money(selectedEmployee.allowance)],
+                ["Bonus", money(selectedEmployee.bonusAmount)],
+                ["Commission", money(selectedEmployee.commissionAmount)],
+                ["Loan installment", money(selectedEmployee.loanDeductionAmount)],
                 ["Allowance deducted", money(selectedEmployee.allowanceDeductionAmount)],
                 ["Deduction amount", money(selectedEmployee.deductionAmount)],
                 ["Final amount", money(selectedEmployee.payableSalary)],

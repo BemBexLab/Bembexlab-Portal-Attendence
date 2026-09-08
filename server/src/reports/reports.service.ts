@@ -3,7 +3,12 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { AttendanceStatus, UserRole } from '@prisma/client';
+import {
+  AttendanceStatus,
+  EmployeeEarningStatus,
+  EmployeeEarningType,
+  UserRole,
+} from '@prisma/client';
 
 import type { CurrentUser } from '../auth/types/current-user.type';
 import { PrismaService } from '../prisma/prisma.service';
@@ -59,6 +64,11 @@ type AttendanceExportRow = {
 
 @Injectable()
 export class ReportsService {
+  private readonly shiftDateCache = new Map<
+    string,
+    { dateKey: string; expiresAt: number }
+  >();
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getDailyReport(user: CurrentUser, query: DailyReportQueryDto) {
@@ -75,15 +85,25 @@ export class ReportsService {
     const [employees, dailyRecords, databaseNow] = await Promise.all([
       this.prisma.employee.findMany({
         where: employeeWhere,
-        include: {
-          department: true,
-          organization: true,
+        select: {
+          id: true,
+          organizationId: true,
+          employeeCode: true,
+          deviceUserId: true,
+          name: true,
+          attendanceTrackingSince: true,
+          department: { select: { name: true } },
+          organization: { select: { name: true, timezone: true } },
           shiftAssignments: {
             where: {
               effectiveFrom: { lte: date },
               OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }],
             },
-            include: { shift: true },
+            select: {
+              effectiveFrom: true,
+              effectiveTo: true,
+              shift: { select: { startMinutes: true } },
+            },
             orderBy: { effectiveFrom: 'desc' },
             take: 1,
           },
@@ -292,16 +312,48 @@ export class ReportsService {
             : {}),
           ...(scope.employeeId ? { id: scope.employeeId } : {}),
         },
-        include: {
-          department: true,
-          organization: true,
+        select: {
+          id: true,
+          organizationId: true,
+          employeeCode: true,
+          deviceUserId: true,
+          name: true,
+          attendanceTrackingSince: true,
+          monthlySalary: true,
+          allowance: true,
+          department: { select: { name: true } },
+          organization: { select: { name: true, timezone: true } },
           shiftAssignments: {
             where: {
               effectiveFrom: { lt: to },
               OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
             },
-            include: { shift: true },
+            select: {
+              effectiveFrom: true,
+              effectiveTo: true,
+              shift: { select: { startMinutes: true } },
+            },
             orderBy: { effectiveFrom: 'desc' },
+          },
+          employeeEarnings: {
+            where: {
+              payrollCycleMonth: month,
+              status: { in: [EmployeeEarningStatus.APPROVED, EmployeeEarningStatus.PAID] },
+            },
+            select: { type: true, amount: true, percentage: true },
+            orderBy: { createdAt: 'asc' },
+          },
+          employeeLoans: {
+            where: {
+              status: 'ACTIVE',
+              startCycleMonth: { lte: month },
+            },
+            select: {
+              principalAmount: true,
+              monthlyInstallment: true,
+              startCycleMonth: true,
+              numberOfInstallments: true,
+            },
           },
         },
         orderBy: { employeeCode: 'asc' },
@@ -310,6 +362,16 @@ export class ReportsService {
         where: {
           ...this.createAttendanceWhere(scope),
           date: { gte: from, lt: attendanceCutoff },
+        },
+        select: {
+          employeeId: true,
+          date: true,
+          firstCheckIn: true,
+          lastCheckOut: true,
+          workingMinutes: true,
+          status: true,
+          statusOverride: true,
+          graceDeadline: true,
         },
       }),
     ]);
@@ -388,6 +450,19 @@ export class ReportsService {
       }
 
       const monthlySalary = Number(employee.monthlySalary);
+      const bonusAmount = employee.employeeEarnings
+        .filter((earning) => earning.type === EmployeeEarningType.BONUS)
+        .reduce((total, earning) => total + Number(earning.amount), 0);
+      const commissionAmount = employee.employeeEarnings
+        .filter((earning) => earning.type === EmployeeEarningType.COMMISSION)
+        .reduce(
+          (total, earning) =>
+            total +
+            (earning.percentage !== null
+              ? (monthlySalary * Number(earning.percentage)) / 100
+              : Number(earning.amount)),
+          0,
+        );
       const allowance = Number(employee.allowance);
       const dailyRate = payrollDays ? monthlySalary / payrollDays : 0;
       const halfDayDeductionDays = Math.floor(halfDays / 3);
@@ -400,12 +475,31 @@ export class ReportsService {
       // Once there is at least one deduction day, the full allowance is
       // forfeited in addition to the normal per-day salary deduction.
       const allowanceDeductionAmount = totalDeductionDays > 0 ? allowance : 0;
+      const loanDeductionAmount = employee.employeeLoans.reduce(
+        (total, loan) => {
+          const cycleIndex = this.monthDifference(loan.startCycleMonth, month);
+          if (cycleIndex < 0 || cycleIndex >= loan.numberOfInstallments) {
+            return total;
+          }
+
+          const remainingBeforeCycle = Math.max(
+            0,
+            Number(loan.principalAmount) -
+              Number(loan.monthlyInstallment) * cycleIndex,
+          );
+          return total + Math.min(
+            Number(loan.monthlyInstallment),
+            remainingBeforeCycle,
+          );
+        },
+        0,
+      );
       // Allowance is a deduction/forfeiture, not an addition to gross salary.
       // Gross salary therefore remains the employee's monthly salary.
-      const grossSalary = monthlySalary;
+      const grossSalary = monthlySalary + bonusAmount + commissionAmount;
       const deductionAmount = Math.min(
         grossSalary,
-        salaryDeductionAmount + allowanceDeductionAmount,
+        salaryDeductionAmount + allowanceDeductionAmount + loanDeductionAmount,
       );
 
       return {
@@ -415,6 +509,8 @@ export class ReportsService {
         department: employee.department?.name ?? 'Unassigned',
         monthlySalary: this.roundMoney(monthlySalary),
         allowance: this.roundMoney(allowance),
+        bonusAmount: this.roundMoney(bonusAmount),
+        commissionAmount: this.roundMoney(commissionAmount),
         grossSalary: this.roundMoney(grossSalary),
         payrollDays,
         workingDays: workingDateKeys.length,
@@ -422,6 +518,7 @@ export class ReportsService {
         dailyRate: this.roundMoney(dailyRate),
         salaryDeductionAmount: this.roundMoney(salaryDeductionAmount),
         allowanceDeductionAmount: this.roundMoney(allowanceDeductionAmount),
+        loanDeductionAmount: this.roundMoney(loanDeductionAmount),
         presentDays,
         absentDays,
         halfDays,
@@ -445,6 +542,7 @@ export class ReportsService {
       monthlySalary: row.monthlySalary,
       payrollDays: row.payrollDays,
       dailyRate: row.dailyRate,
+      loanDeductionAmount: row.loanDeductionAmount,
       deductionAmount: row.deductionAmount,
       calculatedThrough:
         attendanceCutoff > from
@@ -474,7 +572,7 @@ export class ReportsService {
           : null,
       workingDays: workingDateKeys.length,
       payrollDays,
-      rule: "Payroll runs every calendar day from the 25th through the following month's 25th. Saturdays and Sundays are paid off-days and never create deductions. A late arrival is a half day. Each absent weekday deducts 1 calendar-day salary; every 3 half days deduct 1 calendar-day salary. The full allowance is forfeited whenever at least one deduction day is assessed.",
+      rule: "Payroll runs every calendar day from the 26th through the following month's 25th. Saturdays and Sundays are paid off-days and never create deductions. A late arrival is a half day. Each absent weekday deducts 1 calendar-day salary; every 3 half days deduct 1 calendar-day salary. Approved or paid bonuses and commissions are added to gross salary for the selected cycle. Active loan installments are deducted once per cycle until the configured installment count is complete. The full allowance is forfeited whenever at least one deduction day is assessed.",
       summary: {
         employees: rows.length,
         grossSalary: this.roundMoney(
@@ -539,6 +637,7 @@ export class ReportsService {
       monthlySalary: Number(deduction.monthlySalary),
       payrollDays: deduction.payrollDays,
       dailyRate: Number(deduction.dailyRate),
+      loanDeductionAmount: Number(deduction.loanDeductionAmount),
       deductionAmount: Number(deduction.deductionAmount),
       calculatedThrough: deduction.calculatedThrough,
     }));
@@ -581,15 +680,24 @@ export class ReportsService {
             : {}),
           ...(scope.employeeId ? { id: scope.employeeId } : {}),
         },
-        include: {
-          department: true,
-          organization: true,
+        select: {
+          id: true,
+          employeeCode: true,
+          deviceUserId: true,
+          name: true,
+          attendanceTrackingSince: true,
+          department: { select: { name: true } },
+          organization: { select: { name: true, timezone: true } },
           shiftAssignments: {
             where: {
               effectiveFrom: { lt: to },
               OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
             },
-            include: { shift: true },
+            select: {
+              effectiveFrom: true,
+              effectiveTo: true,
+              shift: { select: { startMinutes: true } },
+            },
             orderBy: { effectiveFrom: 'desc' },
           },
         },
@@ -966,15 +1074,21 @@ export class ReportsService {
             : {}),
           ...(scope.employeeId ? { id: scope.employeeId } : {}),
         },
-        include: {
-          department: true,
-          organization: true,
+        select: {
+          id: true,
+          attendanceTrackingSince: true,
+          department: { select: { name: true } },
+          organization: { select: { timezone: true } },
           shiftAssignments: {
             where: {
               effectiveFrom: { lt: to },
               OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
             },
-            include: { shift: true },
+            select: {
+              effectiveFrom: true,
+              effectiveTo: true,
+              shift: { select: { startMinutes: true } },
+            },
             orderBy: { effectiveFrom: 'desc' },
           },
         },
@@ -1174,13 +1288,28 @@ export class ReportsService {
           lt: to,
         },
       },
-      include: {
+      select: {
+        employeeId: true,
+        date: true,
+        firstCheckIn: true,
+        lastCheckOut: true,
+        workingMinutes: true,
+        status: true,
+        statusOverride: true,
+        graceDeadline: true,
         employee: {
-          include: {
-            department: true,
+          select: {
+            employeeCode: true,
+            deviceUserId: true,
+            name: true,
+            department: {
+              select: { name: true },
+            },
           },
         },
-        organization: true,
+        organization: {
+          select: { name: true, timezone: true },
+        },
       },
       orderBy: {
         date: 'asc',
@@ -1266,6 +1395,12 @@ export class ReportsService {
   }
 
   private async getCurrentShiftDateKey(organizationId?: string) {
+    const cacheKey = organizationId ?? '*';
+    const cached = this.shiftDateCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.dateKey;
+    }
+
     const organization = organizationId
       ? await this.prisma.organization.findUnique({
           where: { id: organizationId },
@@ -1278,6 +1413,13 @@ export class ReportsService {
     const timezone = organization?.timezone || 'Asia/Karachi';
     const now = await this.prisma.databaseNow();
     const dateKey = getDateKeyInTimeZone(now, timezone);
+    // The date key changes at most once per day. A short cache removes an
+    // extra remote database round-trip when several report widgets mount
+    // together, while still picking up a timezone/date rollover promptly.
+    this.shiftDateCache.set(cacheKey, {
+      dateKey,
+      expiresAt: Date.now() + 30_000,
+    });
     return dateKey;
   }
 
@@ -1512,7 +1654,8 @@ export class ReportsService {
   private getPayrollCycleMonth(currentShiftDateKey: string) {
     const day = Number(currentShiftDateKey.slice(8, 10));
 
-    if (day >= 25) {
+    // A cycle starts on the 26th and closes on the 25th of the next month.
+    if (day >= 26) {
       return currentShiftDateKey.slice(0, 7);
     }
 
@@ -1524,7 +1667,7 @@ export class ReportsService {
   }
 
   private getPayrollCycleWindow(monthKey: string) {
-    const from = this.toDatabaseDate(`${monthKey}-25`);
+    const from = this.toDatabaseDate(`${monthKey}-26`);
     const cycleEndDate = this.toDatabaseDate(`${monthKey}-25`);
     cycleEndDate.setUTCMonth(cycleEndDate.getUTCMonth() + 1);
     const cycleStart = this.toDateKey(from);
@@ -1536,6 +1679,12 @@ export class ReportsService {
       cycleStart,
       cycleEnd,
     };
+  }
+
+  private monthDifference(fromMonth: string, toMonth: string) {
+    const [fromYear, fromValue] = fromMonth.split('-').map(Number);
+    const [toYear, toValue] = toMonth.split('-').map(Number);
+    return (toYear - fromYear) * 12 + (toValue - fromValue);
   }
 
   private toDatabaseDate(dateKey: string) {

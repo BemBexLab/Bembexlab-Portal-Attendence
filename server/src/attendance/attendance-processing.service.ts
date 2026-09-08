@@ -35,6 +35,10 @@ export class AttendanceProcessingService {
     Promise<ProcessedDeviceResult>
   >();
   private allDevicesSync: Promise<AttendanceProcessingResult> | null = null;
+  private retentionRun: ReturnType<
+    AttendanceProcessingService['enforceSixMonthRetention']
+  > | null = null;
+  private lastRetentionRunAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -138,7 +142,34 @@ export class AttendanceProcessingService {
       );
     }
 
+    // Retention is checked as part of the recurring sync, but throttled to
+    // once per day so a five-minute sync does not repeatedly scan/delete the
+    // same tables. This keeps the rolling six-month policy automatic even
+    // when no new punches arrive.
+    await this.runRetentionIfDue();
+
     return result;
+  }
+
+  private async runRetentionIfDue() {
+    const now = Date.now();
+    if (
+      this.lastRetentionRunAt > 0 &&
+      now - this.lastRetentionRunAt < 24 * 60 * 60 * 1000
+    ) {
+      return null;
+    }
+    if (this.retentionRun) return this.retentionRun;
+
+    const run = this.enforceSixMonthRetention();
+    this.retentionRun = run;
+    try {
+      const result = await run;
+      this.lastRetentionRunAt = Date.now();
+      return result;
+    } finally {
+      if (this.retentionRun === run) this.retentionRun = null;
+    }
   }
 
   private async markMissingDeviceEmployeesDeleted(
@@ -212,7 +243,7 @@ export class AttendanceProcessingService {
     return eligible.length;
   }
 
-  async enforceTwoMonthRetention() {
+  async enforceSixMonthRetention() {
     const now = await this.prisma.databaseNow();
     const { retainedDateKey, dailyCutoff, punchCutoff } =
       this.getRetentionCutoffs(now);
@@ -351,7 +382,31 @@ export class AttendanceProcessingService {
     this.deviceSyncs.set(deviceId, sync);
 
     try {
-      return await sync;
+      const result = await sync;
+      await this.runRetentionIfDue();
+      return result;
+    } finally {
+      if (this.deviceSyncs.get(deviceId) === sync) {
+        this.deviceSyncs.delete(deviceId);
+      }
+    }
+  }
+
+  async backfillDeviceAttendance(
+    deviceId: string,
+  ): Promise<ProcessedDeviceResult> {
+    const activeSync = this.deviceSyncs.get(deviceId);
+    if (activeSync) {
+      return activeSync;
+    }
+
+    const sync = this.processDeviceInternal(deviceId, true);
+    this.deviceSyncs.set(deviceId, sync);
+
+    try {
+      const result = await sync;
+      await this.runRetentionIfDue();
+      return result;
     } finally {
       if (this.deviceSyncs.get(deviceId) === sync) {
         this.deviceSyncs.delete(deviceId);
@@ -361,6 +416,7 @@ export class AttendanceProcessingService {
 
   private async processDeviceInternal(
     deviceId: string,
+    backfill = false,
   ): Promise<ProcessedDeviceResult> {
     const device = await this.prisma.zktecoDevice.findUniqueOrThrow({
       where: {
@@ -450,9 +506,7 @@ export class AttendanceProcessingService {
         await this.zktecoService.getAttendancePunches(device);
       const firstPunchTime = fetchedPunches.reduce<Date | undefined>(
         (earliest, punch) =>
-          !earliest || punch.punchTime < earliest
-            ? punch.punchTime
-            : earliest,
+          !earliest || punch.punchTime < earliest ? punch.punchTime : earliest,
         undefined,
       );
       await this.ensureDefaultShiftAssignments(
@@ -461,10 +515,12 @@ export class AttendanceProcessingService {
         databaseNow,
         firstPunchTime,
       );
-      const { punchCutoff } = this.getRetentionCutoffs(databaseNow);
-      const punches = fetchedPunches.filter(
-        (punch) => punch.punchTime >= punchCutoff,
-      );
+      const retentionCutoff = backfill
+        ? null
+        : this.getRetentionCutoffs(databaseNow).punchCutoff;
+      const punches = backfill
+        ? fetchedPunches
+        : fetchedPunches.filter((punch) => punch.punchTime >= retentionCutoff!);
       const punchDeviceUserIds = Array.from(
         new Set(punches.map((punch) => punch.deviceUserId)),
       );
@@ -491,14 +547,16 @@ export class AttendanceProcessingService {
           .filter((employee) => employee.deviceUserId)
           .map((employee) => [employee.deviceUserId as string, employee]),
       );
-      const latestStoredLog = await this.prisma.attendanceLog.findFirst({
-        where: { deviceId: device.id },
-        orderBy: { punchTime: 'desc' },
-        select: { punchTime: true },
-      });
-      const recentRecalculationCutoff = new Date(
-        databaseNow.getTime() - 2 * 86_400_000,
-      );
+      const latestStoredLog = backfill
+        ? null
+        : await this.prisma.attendanceLog.findFirst({
+            where: { deviceId: device.id },
+            orderBy: { punchTime: 'desc' },
+            select: { punchTime: true },
+          });
+      const recentRecalculationCutoff = backfill
+        ? null
+        : new Date(databaseNow.getTime() - 2 * 86_400_000);
       const affectedDays = new Map<string, AffectedAttendanceDay>();
       const rawLogs = punches.flatMap((punch) => {
         const employee = employeeByDeviceUserId.get(punch.deviceUserId);
@@ -513,9 +571,10 @@ export class AttendanceProcessingService {
         const employeeId = employee.id;
 
         if (
+          backfill ||
           !latestStoredLog ||
           punch.punchTime >= latestStoredLog.punchTime ||
-          punch.punchTime >= recentRecalculationCutoff
+          punch.punchTime >= recentRecalculationCutoff!
         ) {
           const dateKey = this.resolveShiftDateKey(
             punch.punchTime,
@@ -532,7 +591,11 @@ export class AttendanceProcessingService {
           }
         }
 
-        if (latestStoredLog && punch.punchTime < latestStoredLog.punchTime) {
+        if (
+          !backfill &&
+          latestStoredLog &&
+          punch.punchTime < latestStoredLog.punchTime
+        ) {
           return [];
         }
 
@@ -909,20 +972,33 @@ export class AttendanceProcessingService {
   private getRetentionCutoffs(now: Date) {
     const pakistanDate = getDateKeyInTimeZone(now, 'Asia/Karachi');
     const [year, month] = pakistanDate.split('-').map(Number);
-    const retainedMonthStart = new Date(Date.UTC(year, month - 2, 1));
-    const retainedDateKey = retainedMonthStart.toISOString().slice(0, 10);
+    const [, , day] = pakistanDate.split('-').map(Number);
+    // Keep a true rolling six-month window (including today), rather than
+    // retaining an extra/short calendar-month boundary. For example, on
+    // 2026-09-08 the cutoff is 2026-03-08; July remains available.
+    const targetMonth = month - 1 - 6;
+    const retainedMonthStart = new Date(Date.UTC(year, targetMonth, 1));
+    const daysInRetainedMonth = new Date(
+      Date.UTC(
+        retainedMonthStart.getUTCFullYear(),
+        retainedMonthStart.getUTCMonth() + 1,
+        0,
+      ),
+    ).getUTCDate();
+    const retainedDate = new Date(
+      Date.UTC(
+        retainedMonthStart.getUTCFullYear(),
+        retainedMonthStart.getUTCMonth(),
+        Math.min(day, daysInRetainedMonth),
+      ),
+    );
+    const retainedDateKey = retainedDate.toISOString().slice(0, 10);
+    const retainedDateAtUtc = dateKeyToDatabaseDate(retainedDateKey);
 
     return {
       retainedDateKey,
-      dailyCutoff: dateKeyToDatabaseDate(retainedDateKey),
-      punchCutoff: new Date(
-        Date.UTC(
-          retainedMonthStart.getUTCFullYear(),
-          retainedMonthStart.getUTCMonth(),
-          1,
-        ) -
-          5 * 60 * 60 * 1000,
-      ),
+      dailyCutoff: retainedDateAtUtc,
+      punchCutoff: new Date(retainedDateAtUtc.getTime() - 5 * 60 * 60 * 1000),
     };
   }
 

@@ -10,9 +10,9 @@ import {
   Clock4,
   CalendarRange,
   UsersRound,
-  FlaskConical,
   KeyRound,
   Inbox,
+  WalletCards,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -26,19 +26,41 @@ import { useAppStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useRealtimeStore } from "@/stores/realtime-store";
 
-const navItems = [
-  // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/shifts", label: "Shifts", icon: Clock4 },
-  { href: "/employees", label: "Employees", icon: UsersRound },
-  { href: "/attendance", label: "Attendance", icon: CalendarDays },
-  { href: "/leave-remote", label: "Leave & Remote", icon: CalendarRange },
-  { href: "/devices", label: "Devices", icon: Fingerprint },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/raw-data", label: "Raw Data", icon: Rows3 },
-  // { href: "/testing-names", label: "Testing Names", icon: FlaskConical },
-  { href: "/email-password", label: "Email / Password", icon: KeyRound },
-  { href: "/requests", label: "Requests", icon: Inbox },
+const navGroups = [
+  {
+    label: "Overview",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Workforce",
+    items: [
+      { href: "/employees", label: "Employees", icon: UsersRound },
+      { href: "/attendance", label: "Attendance", icon: CalendarDays },
+      { href: "/shifts", label: "Shifts", icon: Clock4 },
+      { href: "/leave-remote", label: "Leave & Remote", icon: CalendarRange },
+    ],
+  },
+  {
+    label: "Payroll & reports",
+    items: [
+      { href: "/payroll", label: "Payroll", icon: WalletCards },
+      { href: "/reports", label: "Reports", icon: BarChart3 },
+      { href: "/requests", label: "Requests", icon: Inbox },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { href: "/devices", label: "Devices", icon: Fingerprint },
+      { href: "/raw-data", label: "Raw Data", icon: Rows3 },
+      { href: "/email-password", label: "Email / Password", icon: KeyRound },
+    ],
+  },
 ];
+
+const navItems = navGroups.flatMap((group) => group.items);
 
 type AppShellProps = {
   children: ReactNode;
@@ -82,27 +104,38 @@ export function AppShell({ children, title, description }: AppShellProps) {
             ) : null}
           </div>
 
-          <nav className="flex-1 space-y-1 px-2 py-3">
-            {navItems.map((item) => {
-              const active = pathname === item.href;
-              const Icon = item.icon;
+          <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-4">
+            {navGroups.map((group) => (
+              <div key={group.label}>
+                {sidebarOpen ? (
+                  <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    {group.label}
+                  </p>
+                ) : null}
+                <div className="space-y-1">
+                  {group.items.map((item) => {
+                    const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    const Icon = item.icon;
 
-              return (
-                <Link
-                  className={cn(
-                    "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-accent",
-                    active && "bg-sidebar-accent text-sidebar-accent-foreground",
-                    !sidebarOpen && "justify-center px-0",
-                  )}
-                  href={item.href}
-                  key={item.href}
-                  title={item.label}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  {sidebarOpen ? <span>{item.label}</span> : null}
-                </Link>
-              );
-            })}
+                    return (
+                      <Link
+                        className={cn(
+                          "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-accent",
+                          active && "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
+                          !sidebarOpen && "justify-center px-0",
+                        )}
+                        href={item.href}
+                        key={item.href}
+                        title={item.label}
+                      >
+                        <Icon className="size-4 shrink-0" />
+                        {sidebarOpen ? <span>{item.label}</span> : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
         </aside>
@@ -152,7 +185,7 @@ export function AppShell({ children, title, description }: AppShellProps) {
             </div>
             <nav className="flex gap-1 overflow-x-auto border-t border-border px-3 py-2 md:hidden">
               {navItems.map((item) => {
-                const active = pathname === item.href;
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = item.icon;
 
                 return (

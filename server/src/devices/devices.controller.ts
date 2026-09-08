@@ -101,4 +101,12 @@ export class DevicesController {
   ) {
     return this.devicesService.syncAttendanceLogs(user, id);
   }
+
+  @Post(':id/backfill-attendance')
+  backfillAttendance(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.devicesService.backfillAttendance(user, id);
+  }
 }

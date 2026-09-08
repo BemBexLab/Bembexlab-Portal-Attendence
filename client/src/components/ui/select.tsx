@@ -30,7 +30,16 @@ export function Select({ value, options, onChange, placeholder = "Select", ariaL
   const positionMenu = () => {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return false;
-    setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    const menuWidth = Math.max(rect.width, menuMinWidth);
+    const menuHeight = 240;
+    const openAbove = rect.bottom + menuHeight + 6 > window.innerHeight;
+    setPosition({
+      top: openAbove
+        ? Math.max(8, rect.top - menuHeight - 6)
+        : rect.bottom + 6,
+      left: Math.min(Math.max(8, rect.left), window.innerWidth - menuWidth - 8),
+      width: rect.width,
+    });
     return true;
   };
 

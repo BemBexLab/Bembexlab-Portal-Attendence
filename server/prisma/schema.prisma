@@ -74,6 +74,25 @@ enum CorrectionStatus {
   REJECTED
 }
 
+enum EmployeeEarningType {
+  BONUS
+  COMMISSION
+}
+
+enum EmployeeEarningStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum EmployeeLoanStatus {
+  ACTIVE
+  PAUSED
+  PAID
+  CANCELLED
+}
+
 model Organization {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String   @db.VarChar(160)
@@ -90,7 +109,9 @@ model Organization {
   shifts                Shift[]
   employeeRequests      EmployeeRequest[]
   attendanceCorrections AttendanceCorrection[]
-  deductions Deduction[]
+  deductions            Deduction[]
+  employeeEarnings      EmployeeEarning[]
+  employeeLoans         EmployeeLoan[]
 
   @@index([name])
   @@map("organizations")
@@ -156,13 +177,57 @@ model Employee {
   shiftAssignments      EmployeeShiftAssignment[]
   requests              EmployeeRequest[]
   attendanceCorrections AttendanceCorrection[]
-  deductions Deduction[]
+  deductions            Deduction[]
+  employeeEarnings      EmployeeEarning[]
+  employeeLoans         EmployeeLoan[]
 
   @@unique([organizationId, employeeCode])
   @@unique([organizationId, deviceUserId])
   @@index([organizationId, departmentId])
   @@index([deviceUserId])
   @@map("employees")
+}
+
+model EmployeeEarning {
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String                @map("organization_id") @db.Uuid
+  employeeId        String                @map("employee_id") @db.Uuid
+  type              EmployeeEarningType
+  status            EmployeeEarningStatus @default(APPROVED)
+  amount            Decimal               @default(0) @db.Decimal(12, 2)
+  percentage        Decimal?              @db.Decimal(5, 2)
+  payrollCycleMonth String                @map("payroll_cycle_month") @db.VarChar(7)
+  description       String?               @db.VarChar(255)
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, payrollCycleMonth])
+  @@index([employeeId, payrollCycleMonth])
+  @@map("employee_earnings")
+}
+
+model EmployeeLoan {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String            @map("organization_id") @db.Uuid
+  employeeId          String            @map("employee_id") @db.Uuid
+  description         String?           @db.VarChar(255)
+  principalAmount     Decimal           @map("principal_amount") @db.Decimal(12, 2)
+  monthlyInstallment  Decimal           @map("monthly_installment") @db.Decimal(12, 2)
+  startCycleMonth     String            @map("start_cycle_month") @db.VarChar(7)
+  numberOfInstallments Int              @map("number_of_installments")
+  status              EmployeeLoanStatus @default(ACTIVE)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([employeeId, status, startCycleMonth])
+  @@map("employee_loans")
 }
 
 model ZktecoDevice {
@@ -308,11 +373,11 @@ model Shift {
 
 model EmployeeShiftAssignment {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  employeeId     String    @map("employee_id") @db.Uuid
-  shiftId        String    @map("shift_id") @db.Uuid
-  effectiveFrom  DateTime  @map("effective_from") @db.Date
-  effectiveTo    DateTime? @map("effective_to") @db.Date
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  employeeId    String    @map("employee_id") @db.Uuid
+  shiftId       String    @map("shift_id") @db.Uuid
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   shift    Shift    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
@@ -323,22 +388,23 @@ model EmployeeShiftAssignment {
 }
 
 model Deduction {
-  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId           String    @map("organization_id") @db.Uuid
-  employeeId               String    @map("employee_id") @db.Uuid
-  payrollCycleMonth        String    @map("payroll_cycle_month") @db.VarChar(7)
-  lateDays                 Int       @default(0) @map("late_days")
-  halfDays                 Int       @default(0) @map("half_days")
-  absentDays               Int       @default(0) @map("absent_days")
-  lateHalfDayDeductionDays Int       @default(0) @map("late_half_day_deduction_days")
-  totalDeductionDays       Int       @default(0) @map("total_deduction_days")
-  monthlySalary            Decimal   @default(0) @map("monthly_salary") @db.Decimal(12, 2)
-  payrollDays              Int       @default(0) @map("payroll_days")
-  dailyRate                Decimal   @default(0) @map("daily_rate") @db.Decimal(12, 2)
-  deductionAmount          Decimal   @default(0) @map("deduction_amount") @db.Decimal(12, 2)
-  calculatedThrough        String?   @map("calculated_through") @db.VarChar(10)
-  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String   @map("organization_id") @db.Uuid
+  employeeId               String   @map("employee_id") @db.Uuid
+  payrollCycleMonth        String   @map("payroll_cycle_month") @db.VarChar(7)
+  lateDays                 Int      @default(0) @map("late_days")
+  halfDays                 Int      @default(0) @map("half_days")
+  absentDays               Int      @default(0) @map("absent_days")
+  lateHalfDayDeductionDays Int      @default(0) @map("late_half_day_deduction_days")
+  totalDeductionDays       Int      @default(0) @map("total_deduction_days")
+  monthlySalary            Decimal  @default(0) @map("monthly_salary") @db.Decimal(12, 2)
+  payrollDays              Int      @default(0) @map("payroll_days")
+  dailyRate                Decimal  @default(0) @map("daily_rate") @db.Decimal(12, 2)
+  loanDeductionAmount      Decimal  @default(0) @map("loan_deduction_amount") @db.Decimal(12, 2)
+  deductionAmount          Decimal  @default(0) @map("deduction_amount") @db.Decimal(12, 2)
+  calculatedThrough        String?  @map("calculated_through") @db.VarChar(10)
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
