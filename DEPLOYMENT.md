@@ -63,6 +63,35 @@ pm2 restart bembex-api
 pm2 restart bembex-web
 ```
 
+## Windows autostart
+
+On Windows, PM2 itself does not register a boot service. After building the
+server and client and starting the ecosystem once, save the process list:
+
+```powershell
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+Register a Scheduled Task to restore those saved processes whenever the PM2
+user signs in:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+& .\scripts\install-pm2-autostart.ps1
+```
+
+To start PM2 at machine boot instead of user sign-in, run an elevated
+PowerShell and use:
+
+```powershell
+& .\scripts\install-pm2-autostart.ps1 -AtStartup
+```
+
+The startup task runs `pm2 resurrect`, so it restores exactly the processes
+captured by `pm2 save`. Keep the project paths and PM2 installation available
+to the same Windows account that registered the task.
+
 ## Redis
 
 Use a managed Redis or install Redis on the VPS:

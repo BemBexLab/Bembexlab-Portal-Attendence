@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { UserRole } from '@prisma/client';
 
 import { CurrentUserDecorator } from '../auth/decorators/current-user.decorator';
@@ -26,6 +27,28 @@ export class RequestsController {
   @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER, UserRole.EMPLOYEE)
   create(@CurrentUserDecorator() user: CurrentUser, @Body() dto: CreateEmployeeRequestDto) {
     return this.requestsService.create(user, dto);
+  }
+
+  @Get(':id/attachments/:attachmentId')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
+  async downloadAttachment(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('attachmentId', ParseUUIDPipe) attachmentId: string,
+    @Res() response: Response,
+  ) {
+    const attachment = await this.requestsService.getAttachment(
+      user,
+      id,
+      attachmentId,
+    );
+    response.setHeader('Content-Type', attachment.mimeType);
+    response.setHeader('Content-Length', attachment.content.length);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`,
+    );
+    response.status(200).send(attachment.content);
   }
 
   @Patch(':id/status')

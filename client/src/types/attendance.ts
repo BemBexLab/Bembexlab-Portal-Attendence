@@ -77,6 +77,15 @@ export type EmployeeRequest = {
   submittedAt: string;
   updatedAt: string;
   decidedAt: string | null;
+  attachments?: RequestAttachment[];
+};
+
+export type RequestAttachment = {
+  id?: string;
+  name: string;
+  url: string;
+  mimeType?: string | null;
+  size?: number | null;
 };
 
 export type Shift = {

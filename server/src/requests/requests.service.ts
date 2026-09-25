@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   CorrectionStatus,
+  Prisma,
   RequestKind,
   RequestStatus,
   UserRole,
@@ -18,6 +19,28 @@ import type { CurrentUser } from '../auth/types/current-user.type';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeRequestDto } from './dto/create-employee-request.dto';
 import { RequestQueryDto } from './dto/request-query.dto';
+
+type AttachmentMetadataRow = {
+  id: string;
+  request_id: string;
+  original_name: string;
+  mime_type: string | null;
+  size_bytes: bigint | number | null;
+};
+
+type AttachmentRow = {
+  original_name: string;
+  mime_type: string | null;
+  content: Buffer | Uint8Array;
+};
+
+type RequestAttachmentView = {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string | null;
+  size: number;
+};
 
 @Injectable()
 export class RequestsService implements OnModuleInit, OnModuleDestroy {
@@ -83,6 +106,11 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
             orderBy: [{ status: 'asc' }, { submittedAt: 'desc' }],
           });
 
+    const attachmentMap = await this.listAttachments([
+      ...records.map((record) => record.id),
+      ...corrections.map((correction) => correction.id),
+    ]);
+
     const employeeRequests = records.map((record) => ({
       id: record.id,
       source: 'EMPLOYEE_REQUEST' as const,
@@ -98,6 +126,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
       toDate: record.toDate.toISOString().slice(0, 10),
       reason: record.reason,
       note: record.note,
+      attachments: attachmentMap.get(record.id) ?? [],
       status: record.status,
       submittedAt: record.submittedAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
@@ -124,6 +153,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         toDate: attendanceDate.toISOString().slice(0, 10),
         reason: correction.description,
         note: null,
+        attachments: attachmentMap.get(correction.id) ?? [],
         status: correction.status,
         submittedAt: correction.submittedAt.toISOString(),
         updatedAt: correction.updatedAt.toISOString(),
@@ -137,6 +167,68 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         statusOrder[left.status] - statusOrder[right.status] ||
         right.submittedAt.localeCompare(left.submittedAt),
     );
+  }
+
+  async getAttachment(
+    user: CurrentUser,
+    requestId: string,
+    attachmentId: string,
+  ) {
+    if (user.role !== UserRole.SUPER_ADMIN && !user.organizationId) {
+      throw new ForbiddenException('User is not assigned to an organization');
+    }
+
+    const rows =
+      user.role === UserRole.SUPER_ADMIN
+        ? await this.prisma.$queryRaw<AttachmentRow[]>`
+            SELECT original_name, mime_type, content
+            FROM request_attachments
+            WHERE id = ${attachmentId}::uuid
+              AND request_id = ${requestId}::uuid
+            LIMIT 1
+          `
+        : await this.prisma.$queryRaw<AttachmentRow[]>`
+            SELECT original_name, mime_type, content
+            FROM request_attachments
+            WHERE id = ${attachmentId}::uuid
+              AND request_id = ${requestId}::uuid
+              AND organization_id = ${user.organizationId as string}::uuid
+            LIMIT 1
+          `;
+
+    const attachment = rows[0];
+    if (!attachment) throw new NotFoundException('Attachment not found');
+    return {
+      originalName: attachment.original_name,
+      mimeType: attachment.mime_type || 'application/octet-stream',
+      content: Buffer.from(attachment.content),
+    };
+  }
+
+  private async listAttachments(requestIds: string[]) {
+    const attachmentsByRequest = new Map<string, RequestAttachmentView[]>();
+    if (!requestIds.length) return attachmentsByRequest;
+
+    const rows = await this.prisma.$queryRaw<AttachmentMetadataRow[]>`
+      SELECT id, request_id, original_name, mime_type, size_bytes
+      FROM request_attachments
+      WHERE request_id IN (${Prisma.join(requestIds)})
+      ORDER BY uploaded_at ASC
+    `;
+
+    for (const row of rows) {
+      const attachment = {
+        id: row.id,
+        name: row.original_name,
+        url: `/requests/${row.request_id}/attachments/${row.id}`,
+        mimeType: row.mime_type,
+        size: Number(row.size_bytes ?? 0),
+      };
+      const existing = attachmentsByRequest.get(row.request_id) ?? [];
+      existing.push(attachment);
+      attachmentsByRequest.set(row.request_id, existing);
+    }
+    return attachmentsByRequest;
   }
 
   async create(user: CurrentUser, dto: CreateEmployeeRequestDto) {
