@@ -308,7 +308,17 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         id,
         ...organizationWhere,
       },
-      select: { id: true, status: true, decidedAt: true },
+      select: {
+        id: true,
+        status: true,
+        decidedAt: true,
+        employeeId: true,
+        organizationId: true,
+        kind: true,
+        leaveCategory: true,
+        fromDate: true,
+        toDate: true,
+      },
     });
 
     // The local isolated environment uses a synthetic admin identity that is
@@ -321,6 +331,9 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
 
     if (existing) {
       if (existing.status === status) {
+        if (existing.kind === RequestKind.LEAVE && status === 'APPROVED') {
+          await this.syncApprovedLeave(existing);
+        }
         return {
           id: existing.id,
           status: existing.status,
@@ -338,6 +351,14 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         },
         select: { id: true, status: true, decidedAt: true },
       });
+
+      if (existing.kind === RequestKind.LEAVE) {
+        if (status === 'APPROVED') {
+          await this.syncApprovedLeave(existing);
+        } else if (existing.status === RequestStatus.APPROVED) {
+          await this.removeApprovedLeave(existing);
+        }
+      }
 
       return {
         id: updated.id,
@@ -375,6 +396,72 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
       status: updated.status,
       decidedAt: updated.decidedAt?.toISOString() ?? null,
     };
+  }
+
+  private async syncApprovedLeave(request: {
+    id: string;
+    employeeId: string;
+    organizationId: string;
+    fromDate: Date;
+    toDate: Date;
+  }) {
+    const databaseNow = await this.prisma.databaseNow();
+    const operations: Array<ReturnType<typeof this.prisma.dailyAttendance.upsert>> = [];
+    for (let date = new Date(request.fromDate); date <= request.toDate;) {
+      const weekday = date.getUTCDay();
+      if (weekday !== 0 && weekday !== 6) {
+        operations.push(
+          this.prisma.dailyAttendance.upsert({
+            where: { employeeId_date: { employeeId: request.employeeId, date } },
+            update: {
+              statusOverride: 'ON_LEAVE',
+              statusOverrideAt: databaseNow,
+              statusOverrideBy: null,
+              lastCheckOut: null,
+              workingMinutes: 0,
+            },
+            create: {
+              organizationId: request.organizationId,
+              employeeId: request.employeeId,
+              date,
+              status: 'ON_LEAVE',
+              statusOverride: 'ON_LEAVE',
+              statusOverrideAt: databaseNow,
+              workingMinutes: 0,
+            },
+          }),
+        );
+      }
+      date = new Date(date);
+      date.setUTCDate(date.getUTCDate() + 1);
+    }
+    if (operations.length) await this.prisma.$transaction(operations);
+  }
+
+  private async removeApprovedLeave(request: {
+    employeeId: string;
+    fromDate: Date;
+    toDate: Date;
+  }) {
+    const dates: Date[] = [];
+    for (let date = new Date(request.fromDate); date <= request.toDate;) {
+      if (date.getUTCDay() !== 0 && date.getUTCDay() !== 6) dates.push(date);
+      date = new Date(date);
+      date.setUTCDate(date.getUTCDate() + 1);
+    }
+    if (!dates.length) return;
+    await this.prisma.dailyAttendance.updateMany({
+      where: {
+        employeeId: request.employeeId,
+        date: { in: dates },
+        statusOverride: 'ON_LEAVE',
+      },
+      data: {
+        statusOverride: null,
+        statusOverrideAt: null,
+        statusOverrideBy: null,
+      },
+    });
   }
 
   private async cleanupExpiredRequests() {

@@ -355,6 +355,16 @@ export class ReportsService {
               numberOfInstallments: true,
             },
           },
+          requests: {
+            where: {
+              kind: 'LEAVE',
+              leaveCategory: 'UNPAID_LEAVE',
+              status: 'APPROVED',
+              fromDate: { lt: to },
+              toDate: { gte: from },
+            },
+            select: { fromDate: true, toDate: true },
+          },
         },
         orderBy: { employeeCode: 'asc' },
       }),
@@ -394,6 +404,27 @@ export class ReportsService {
       let halfDays = 0;
       let presentDays = 0;
       let assessedWorkingDays = 0;
+      const unpaidLeaveDateKeys = new Set<string>();
+      for (const request of employee.requests) {
+        for (
+          let date = request.fromDate;
+          date < request.toDate;
+          date = this.addDays(date, 1)
+        ) {
+          const dateKey = this.toDateKey(date);
+          if (dateKey >= this.toDateKey(from) && dateKey < this.toDateKey(to)) {
+            unpaidLeaveDateKeys.add(dateKey);
+          }
+        }
+      }
+      // Prisma's Date fields are inclusive for toDate; add the end date too.
+      for (const request of employee.requests) {
+        const endDateKey = this.toDateKey(request.toDate);
+        if (endDateKey >= this.toDateKey(from) && endDateKey < this.toDateKey(to)) {
+          unpaidLeaveDateKeys.add(endDateKey);
+        }
+      }
+      let unpaidLeaveDays = 0;
       const attendanceDetails: Array<{
         date: string;
         day: string;
@@ -426,6 +457,14 @@ export class ReportsService {
 
         if (status === 'NOT_STARTED') continue;
         assessedWorkingDays += 1;
+
+        if (unpaidLeaveDateKeys.has(dateKey)) {
+          // Unpaid leave remains visible as Leave, but is charged as an absent
+          // day for salary deductions. It must not trigger allowance loss.
+          absentDays += 1;
+          unpaidLeaveDays += 1;
+          continue;
+        }
 
         if (!status || status === AttendanceStatus.ABSENT) {
           absentDays += 1;
@@ -471,10 +510,9 @@ export class ReportsService {
         monthlySalary,
         dailyRate * totalDeductionDays,
       );
-      // The allowance is paid only when the employee has no deduction days.
-      // Once there is at least one deduction day, the full allowance is
-      // forfeited in addition to the normal per-day salary deduction.
-      const allowanceDeductionAmount = totalDeductionDays > 0 ? allowance : 0;
+      // Half-day deductions do not forfeit the allowance. The allowance is
+      // deducted only when this employee has at least one absent day.
+      const allowanceDeductionAmount = absentDays - unpaidLeaveDays > 0 ? allowance : 0;
       const loanDeductionAmount = employee.employeeLoans.reduce(
         (total, loan) => {
           const cycleIndex = this.monthDifference(loan.startCycleMonth, month);
@@ -572,7 +610,7 @@ export class ReportsService {
           : null,
       workingDays: workingDateKeys.length,
       payrollDays,
-      rule: "Payroll runs every calendar day from the 26th through the following month's 25th. Saturdays and Sundays are paid off-days and never create deductions. A late arrival is a half day. Each absent weekday deducts 1 calendar-day salary; every 3 half days deduct 1 calendar-day salary. Approved or paid bonuses and commissions are added to gross salary for the selected cycle. Active loan installments are deducted once per cycle until the configured installment count is complete. The full allowance is forfeited whenever at least one deduction day is assessed.",
+      rule: "Payroll runs every calendar day from the 26th through the following month's 25th. Saturdays and Sundays are paid off-days and never create deductions. A late arrival is a half day. Each absent weekday deducts 1 calendar-day salary; every 3 half days deduct 1 calendar-day salary. Approved or paid bonuses and commissions are added to gross salary for the selected cycle. Active loan installments are deducted once per cycle until the configured installment count is complete. The full allowance is deducted only when the employee has at least one absent day; half-day deductions alone do not reduce the allowance.",
       summary: {
         employees: rows.length,
         grossSalary: this.roundMoney(

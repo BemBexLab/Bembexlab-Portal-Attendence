@@ -14,6 +14,7 @@ import { CreateEmployeeEarningDto } from './dto/create-employee-earning.dto';
 import { UpdateEmployeeEarningStatusDto } from './dto/update-employee-earning-status.dto';
 import { CreateEmployeeLoanDto } from './dto/create-employee-loan.dto';
 import { UpdateEmployeeLoanDto } from './dto/update-employee-loan.dto';
+import { ReassignEmployeeAttendanceDto } from './dto/reassign-employee-attendance.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -45,6 +46,20 @@ export class UsersController {
     @Body() dto: UpdateEmployeeStatusDto,
   ) {
     return this.usersService.updateEmployeeStatus(user, id, dto.isActive);
+  }
+
+  @Post('employees/:id/reassign-attendance')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
+  reassignEmployeeAttendance(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) targetEmployeeId: string,
+    @Body() dto: ReassignEmployeeAttendanceDto,
+  ) {
+    return this.usersService.reassignEmployeeAttendance(
+      user,
+      targetEmployeeId,
+      dto.sourceEmployeeId,
+    );
   }
 
   @Patch('employees/:id/salary')

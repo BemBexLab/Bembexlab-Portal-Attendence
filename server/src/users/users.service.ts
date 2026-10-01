@@ -393,6 +393,110 @@ export class UsersService {
     });
   }
 
+  async reassignEmployeeAttendance(
+    user: CurrentUser,
+    targetEmployeeId: string,
+    sourceEmployeeId: string,
+  ) {
+    if (targetEmployeeId === sourceEmployeeId) {
+      throw new BadRequestException(
+        'Source and target employees must be different',
+      );
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      const employees = await transaction.employee.findMany({
+        where: { id: { in: [sourceEmployeeId, targetEmployeeId] } },
+        select: {
+          id: true,
+          organizationId: true,
+          employeeCode: true,
+          deviceUserId: true,
+          name: true,
+        },
+      });
+      const source = employees.find((employee) => employee.id === sourceEmployeeId);
+      const target = employees.find((employee) => employee.id === targetEmployeeId);
+
+      if (!source || !target) {
+        throw new BadRequestException('Both source and target employees are required');
+      }
+
+      if (
+        user.role !== UserRole.SUPER_ADMIN &&
+        (source.organizationId !== user.organizationId ||
+          target.organizationId !== user.organizationId)
+      ) {
+        throw new ForbiddenException('Cannot reassign another organization');
+      }
+
+      if (source.organizationId !== target.organizationId) {
+        throw new BadRequestException(
+          'Source and target employees must belong to the same organization',
+        );
+      }
+
+      const dailyConflictRows = await transaction.$queryRaw<
+        Array<{ count: bigint }>
+      >`
+        SELECT COUNT(*)::bigint AS count
+        FROM "daily_attendance" AS source_daily
+        INNER JOIN "daily_attendance" AS target_daily
+          ON target_daily.employee_id = ${targetEmployeeId}::uuid
+         AND target_daily.date = source_daily.date
+        WHERE source_daily.employee_id = ${sourceEmployeeId}::uuid
+      `;
+      const dailyConflictCount = Number(dailyConflictRows[0]?.count ?? 0);
+
+      if (dailyConflictCount > 0) {
+        throw new ConflictException({
+          message:
+            'Attendance reassignment stopped because the target already has daily records for some dates',
+          dailyConflictCount,
+          sourceEmployeeId,
+          targetEmployeeId,
+        });
+      }
+
+      // Raw punches have a uniqueness constraint that includes employee_id.
+      // Remove only punches already present for the target, then move the
+      // remaining source punches without losing history.
+      const duplicateRawLogCount = await transaction.$executeRaw`
+        DELETE FROM "attendance_logs" AS source_log
+        USING "attendance_logs" AS target_log
+        WHERE source_log.employee_id = ${sourceEmployeeId}::uuid
+          AND target_log.employee_id = ${targetEmployeeId}::uuid
+          AND source_log.device_id IS NOT DISTINCT FROM target_log.device_id
+          AND source_log.punch_time = target_log.punch_time
+          AND source_log.verification_type = target_log.verification_type
+      `;
+      const rawLogResult = await transaction.attendanceLog.updateMany({
+        where: { employeeId: sourceEmployeeId },
+        data: { employeeId: targetEmployeeId },
+      });
+      const dailyResult = await transaction.dailyAttendance.updateMany({
+        where: { employeeId: sourceEmployeeId },
+        data: { employeeId: targetEmployeeId },
+      });
+
+      return {
+        sourceEmployee: {
+          id: source.id,
+          employeeCode: source.deviceUserId ?? source.employeeCode,
+          name: source.name,
+        },
+        targetEmployee: {
+          id: target.id,
+          employeeCode: target.deviceUserId ?? target.employeeCode,
+          name: target.name,
+        },
+        reassignedRawPunches: rawLogResult.count,
+        deduplicatedRawPunches: Number(duplicateRawLogCount),
+        reassignedDailyAttendance: dailyResult.count,
+      };
+    });
+  }
+
   async updateEmployeeSalary(
     user: CurrentUser,
     employeeId: string,
