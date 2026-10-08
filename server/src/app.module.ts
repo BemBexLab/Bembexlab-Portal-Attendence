@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { resolve } from 'node:path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AttendanceModule } from './attendance/attendance.module';
@@ -19,6 +20,7 @@ import { RequestsModule } from './requests/requests.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: resolve(__dirname, '..', '..', '.env'),
       validate: validateEnvironment,
     }),
     DatabaseModule,
