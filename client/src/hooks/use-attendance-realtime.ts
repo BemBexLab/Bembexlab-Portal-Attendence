@@ -13,8 +13,15 @@ import type {
 const REALTIME_NAMESPACE = "realtime";
 
 function getRealtimeUrl() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-  return `${apiUrl.replace(/\/$/, "")}/${REALTIME_NAMESPACE}`;
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return `${process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")}/${REALTIME_NAMESPACE}`;
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    return `http://localhost:4000/${REALTIME_NAMESPACE}`;
+  }
+
+  return `${window.location.origin}/${REALTIME_NAMESPACE}`;
 }
 
 export function useAttendanceRealtime() {

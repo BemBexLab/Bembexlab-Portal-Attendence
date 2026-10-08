@@ -30,7 +30,7 @@ Set both `DATABASE_URL` and `DIRECT_URL` to the VPS PostgreSQL connection string
 Health check:
 
 ```bash
-curl http://localhost:4000/health
+curl http://localhost:4000/api/health
 ```
 
 ## Frontend
