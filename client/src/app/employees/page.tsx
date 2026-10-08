@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import Swal from "sweetalert2";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -772,6 +773,12 @@ export default function EmployeesPage() {
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Link
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-xs font-medium transition hover:bg-muted"
+              href="/payroll"
+            >
+              Payroll controls
+            </Link>
             <button
               className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium transition hover:bg-muted ${hasColumnFilters ? "border-foreground bg-muted" : "border-border bg-background"}`}
               onClick={(event) => toggleColumnFilter("all", event.currentTarget)}
@@ -810,8 +817,8 @@ export default function EmployeesPage() {
               {statusFilter !== "ALL" ? <Badge tone={statusFilter === "ACTIVE" ? "green" : "neutral"}>{statusFilter === "ACTIVE" ? "Active" : "Inactive"}</Badge> : null}
             </div>
           ) : null}
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1220px] text-left text-sm">
+        <div className="overflow-x-auto" data-table-scroll>
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="w-16 px-4 py-3 font-medium">S.No</th>
@@ -886,12 +893,10 @@ export default function EmployeesPage() {
                       }
                       type="button"
                     >
-                      <span>Monthly Salary</span>
+                      <span>Compensation</span>
                       <Filter className="size-3.5" />
                     </button>
                   </th>
-                  <th className="px-4 py-3 font-medium">Allowance</th>
-                  <th className="px-4 py-3 font-medium">Bonus / Commission</th>
                   <th className="px-2 py-2 font-medium">
                     <button
                       className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 transition hover:bg-muted ${isColumnFilterActive("status") ? "bg-muted text-foreground" : ""}`}
@@ -912,7 +917,7 @@ export default function EmployeesPage() {
                 {employees.isLoading
                   ? Array.from({ length: 6 }, (_, index) => (
                       <tr key={`employee-skeleton-${index}`}>
-                        <td className="px-4 py-5" colSpan={9}>
+                        <td className="px-4 py-5" colSpan={7}>
                           <div className="h-5 w-full animate-pulse rounded-md bg-muted" />
                         </td>
                       </tr>
@@ -968,26 +973,7 @@ export default function EmployeesPage() {
                     </td>
                     <td className="px-4 py-3 tabular-nums">
                       <span className="font-medium">{formatMoney(Number(employee.monthlySalary))}</span>
-                      <p className="text-xs text-muted-foreground">Base monthly pay</p>
-                    </td>
-                    <td className="px-4 py-3 tabular-nums">
-                      <span className="font-medium">{formatMoney(Number(employee.allowance))}</span>
-                      <p className="text-xs text-muted-foreground">Deducted on absence</p>
-                    </td>
-                    <td
-                      className="px-4 py-3"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <button
-                        aria-label={`Manage ${employee.name} bonus and commission`}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:bg-muted"
-                        onClick={() => void manageEmployeeEarnings(employee)}
-                        onMouseDown={(event) => event.stopPropagation()}
-                        type="button"
-                      >
-                        <Plus className="size-3.5" />
-                        Manage
-                      </button>
+                      <p className="text-xs text-muted-foreground">Allowance {formatMoney(Number(employee.allowance))}</p>
                     </td>
                     <td
                       className="px-4 py-3"
@@ -1078,7 +1064,7 @@ export default function EmployeesPage() {
                   <tr>
                     <td
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
-                      colSpan={9}
+                      colSpan={7}
                     >
                       No employees match the selected filters.
                     </td>
@@ -1092,13 +1078,13 @@ export default function EmployeesPage() {
       {selectedEmployee ? (
         <div
           aria-modal="true"
-          className="fixed inset-0 z-[80] bg-black/35 backdrop-blur-[1px]"
+          className="fixed inset-0 z-[80] bg-black/35"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setSelectedEmployee(null);
           }}
           role="dialog"
         >
-          <aside className="ml-auto flex h-[100dvh] max-h-[100dvh] w-full max-w-xl flex-col overflow-hidden border-l border-border bg-card shadow-2xl">
+          <aside className="ml-auto flex h-[100dvh] max-h-[100dvh] w-full max-w-xl flex-col overflow-hidden border-l border-border bg-card shadow-lg">
             <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-5">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -1220,7 +1206,7 @@ export default function EmployeesPage() {
               <section className="rounded-xl border border-border">
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                   <div><h3 className="text-sm font-semibold">Bonus and commission</h3><p className="text-xs text-muted-foreground">Manage cycle-specific earnings and approval status.</p></div>
-                  <button className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:opacity-90" onClick={() => void manageEmployeeEarnings(selectedEmployee)} type="button"><Plus className="size-3.5" />Manage</button>
+                  <Link className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs font-medium text-background transition hover:opacity-90" href="/payroll"><Plus className="size-3.5" />Open Payroll</Link>
                 </div>
                 <div className="grid gap-3 p-4 sm:grid-cols-2">
                   <div><p className="text-xs text-muted-foreground">Bonus this cycle</p><p className="mt-1 font-semibold tabular-nums">{selectedPayrollRow ? formatMoney(selectedPayrollRow.bonusAmount) : "—"}</p></div>

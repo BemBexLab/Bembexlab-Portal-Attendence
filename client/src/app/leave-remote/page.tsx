@@ -247,7 +247,7 @@ export default function LeaveRemotePage() {
             </div>
           </PanelHeader>
           <PanelBody className="p-0">
-            <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-table-scroll>
               <table className="w-full min-w-[680px] text-left text-sm">
                 <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                   <tr>

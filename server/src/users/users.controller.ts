@@ -11,6 +11,7 @@ import { UpdateEmployeeStatusDto } from './dto/update-employee-status.dto';
 import { UpdateEmployeeSalaryDto } from './dto/update-employee-salary.dto';
 import { UpdateEmployeeCredentialsDto } from './dto/update-employee-credentials.dto';
 import { CreateEmployeeEarningDto } from './dto/create-employee-earning.dto';
+import { UpdateEmployeeEarningDto } from './dto/update-employee-earning.dto';
 import { UpdateEmployeeEarningStatusDto } from './dto/update-employee-earning-status.dto';
 import { CreateEmployeeLoanDto } from './dto/create-employee-loan.dto';
 import { UpdateEmployeeLoanDto } from './dto/update-employee-loan.dto';
@@ -105,6 +106,17 @@ export class UsersController {
     @Body() dto: CreateEmployeeEarningDto,
   ) {
     return this.usersService.createEmployeeEarning(user, id, dto);
+  }
+
+  @Patch('employees/:id/earnings/:earningId')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.HR_MANAGER)
+  updateEmployeeEarning(
+    @CurrentUserDecorator() user: CurrentUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('earningId', ParseUUIDPipe) earningId: string,
+    @Body() dto: UpdateEmployeeEarningDto,
+  ) {
+    return this.usersService.updateEmployeeEarning(user, id, earningId, dto);
   }
 
   @Patch('employees/:id/earnings/:earningId/status')

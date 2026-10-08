@@ -108,6 +108,7 @@ export default function RequestsPage() {
   const [filter, setFilter] = useState<RequestFilter>("ALL");
   const [search, setSearch] = useState("");
   const [selectedRequest, setSelectedRequest] = useState<EmployeeRequest | null>(null);
+  const allRequests = useEmployeeRequests();
   const requests = useEmployeeRequests(filter === "ALL" ? undefined : filter);
   const updateStatus = useUpdateEmployeeRequestStatus();
 
@@ -123,6 +124,16 @@ export default function RequestsPage() {
       )
       .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
   }, [requests.data, search]);
+
+  const requestSummary = useMemo(() => {
+    const values = allRequests.data ?? [];
+    return {
+      total: values.length,
+      pending: values.filter((request) => request.status === "PENDING").length,
+      accepted: values.filter((request) => request.status === "APPROVED").length,
+      rejected: values.filter((request) => request.status === "REJECTED").length,
+    };
+  }, [allRequests.data]);
 
   const changeStatus = async (
     request: EmployeeRequest,
@@ -174,6 +185,19 @@ export default function RequestsPage() {
       description="Review leave, remote-work, and attendance-correction requests."
       title="Requests"
     >
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Total requests", requestSummary.total, "bg-slate-50 text-slate-700"],
+          ["Pending review", requestSummary.pending, "bg-amber-50 text-amber-800"],
+          ["Accepted", requestSummary.accepted, "bg-emerald-50 text-emerald-700"],
+          ["Rejected", requestSummary.rejected, "bg-red-50 text-red-700"],
+        ].map(([label, value, tone]) => (
+          <div className={`rounded-xl border border-border px-4 py-3 shadow-sm ${tone}`} key={String(label)}>
+            <p className="text-xs font-medium uppercase tracking-wide opacity-75">{label}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+          </div>
+        ))}
+      </div>
       <Panel>
         <PanelHeader className="flex-col items-stretch gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-3">
@@ -222,7 +246,7 @@ export default function RequestsPage() {
               </Button>
             </div>
           ) : null}
-          <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-table-scroll>
             <table className="w-full min-w-[1050px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
@@ -349,7 +373,7 @@ export default function RequestsPage() {
           <section
             aria-labelledby="request-details-title"
             aria-modal="true"
-            className="max-h-[min(760px,calc(100vh-2rem))] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-background shadow-2xl"
+            className="max-h-[min(760px,calc(100vh-2rem))] w-full max-w-2xl overflow-y-auto border border-border bg-background shadow-lg"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
           >

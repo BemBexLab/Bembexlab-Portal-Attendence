@@ -428,28 +428,28 @@ export function AttendanceTable() {
         </div>
       </PanelHeader>
       <PanelBody className="p-0">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-table-scroll>
           {view === "monthly" ? (
             <table
-              className="border-separate border-spacing-0 text-left text-xs"
+              className="attendance-monthly-table border-separate border-spacing-0 text-left text-xs"
               style={{ minWidth: 704 + monthlyDates.length * 240 }}
             >
               <thead className="text-muted-foreground">
                 <tr>
                   <th
-                    className="sticky left-0 z-20 w-16 min-w-16 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
+                    className="attendance-pinned attendance-pinned-sno sticky left-0 z-20 w-16 min-w-16 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
                     rowSpan={2}
                   >
                     S.No
                   </th>
                   <th
-                    className="sticky left-16 z-20 w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
+                    className="attendance-pinned attendance-pinned-id sticky left-16 z-20 w-28 min-w-28 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
                     rowSpan={2}
                   >
                     Employee ID
                   </th>
                   <th
-                    className="sticky left-44 z-20 w-40 min-w-40 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
+                    className="attendance-pinned attendance-pinned-name sticky left-44 z-20 w-40 min-w-40 border-b border-r border-border bg-muted px-3 py-3 font-medium uppercase"
                     rowSpan={2}
                   >
                     Name
@@ -478,7 +478,7 @@ export function AttendanceTable() {
                       <th
                         className={cn(
                           "min-w-60 border-b border-r border-border px-3 py-2 text-center font-medium",
-                          date === currentDate ? "bg-amber-100" : "bg-muted/60",
+                          date === currentDate ? "bg-amber-100" : "bg-muted",
                         )}
                         colSpan={2}
                         key={date}
@@ -499,7 +499,7 @@ export function AttendanceTable() {
                       <th
                         className={cn(
                           "w-36 min-w-36 border-b border-r border-border px-3 py-2 text-center font-medium uppercase",
-                          date === currentDate ? "bg-amber-100" : "bg-muted/60",
+                          date === currentDate ? "bg-amber-100" : "bg-muted",
                         )}
                       >
                         Status
@@ -519,13 +519,13 @@ export function AttendanceTable() {
               <tbody>
                 {monthlyEmployeesWithTotals.map((employee, index) => (
                   <tr className="group" key={employee.id}>
-                    <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium tabular-nums group-hover:bg-muted">
+                    <td className="attendance-pinned attendance-pinned-sno sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium tabular-nums group-hover:bg-muted">
                       {index + 1}
                     </td>
-                    <td className="sticky left-16 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted">
+                    <td className="attendance-pinned attendance-pinned-id sticky left-16 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium group-hover:bg-muted">
                       {employee.employeeCode}
                     </td>
-                    <td className="sticky left-44 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium shadow-[4px_0_8px_-6px_var(--border)] group-hover:bg-muted">
+                    <td className="attendance-pinned attendance-pinned-name sticky left-44 z-10 border-b border-r border-border bg-card px-3 py-3 font-medium shadow-[4px_0_8px_-6px_var(--border)] group-hover:bg-muted">
                       {employee.employee}
                     </td>
                     <td className="border-b border-r border-border px-3 py-2 text-center font-medium tabular-nums">

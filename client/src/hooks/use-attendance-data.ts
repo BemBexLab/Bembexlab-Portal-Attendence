@@ -28,6 +28,7 @@ import {
   updateEmployeeSalary,
   getEmployeeEarnings,
   createEmployeeEarning,
+  updateEmployeeEarning,
   updateEmployeeEarningStatus,
   deleteEmployeeEarning,
   getEmployeeLoans,
@@ -390,6 +391,19 @@ export function useUpdateEmployeeEarningStatus() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: updateEmployeeEarningStatus,
+    onSuccess: (earning) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["employee-earnings", earning.employeeId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
+    },
+  });
+}
+
+export function useUpdateEmployeeEarning() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateEmployeeEarning,
     onSuccess: (earning) => {
       void queryClient.invalidateQueries({
         queryKey: ["employee-earnings", earning.employeeId],

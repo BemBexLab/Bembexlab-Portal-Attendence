@@ -10,7 +10,7 @@ type PanelProps = {
 export function Panel({ children, className }: PanelProps) {
   return (
     <section
-      className={cn("rounded-lg border border-border bg-card text-card-foreground", className)}
+      className={cn("overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm", className)}
     >
       {children}
     </section>
@@ -22,7 +22,7 @@ export function PanelHeader({ children, className }: PanelProps) {
     <div
       data-panel-header
       className={cn(
-        "sticky top-[var(--app-header-height)] z-40 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 shadow-[0_1px_0_var(--border)]",
+        "sticky top-0 z-40 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 shadow-[0_1px_0_var(--border)]",
         className,
       )}
     >

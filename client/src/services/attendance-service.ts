@@ -177,6 +177,23 @@ export async function updateEmployeeEarningStatus(input: {
   return response.data;
 }
 
+export async function updateEmployeeEarning(input: {
+  employeeId: string;
+  earningId: string;
+  type?: EmployeeEarning["type"];
+  amount?: number;
+  percentage?: number | null;
+  payrollCycleMonth?: string;
+  description?: string | null;
+}) {
+  const { employeeId, earningId, ...data } = input;
+  const response = await api.patch<EmployeeEarning>(
+    `/users/employees/${employeeId}/earnings/${earningId}`,
+    data,
+  );
+  return response.data;
+}
+
 export async function deleteEmployeeEarning(input: {
   employeeId: string;
   earningId: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus, Search, Trash2, WalletCards, X } from "lucide-react";
+import { CalendarDays, CheckCircle2, FileText, Pencil, Percent, Plus, Search, Sparkles, Trash2, WalletCards, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import Swal from "sweetalert2";
@@ -13,12 +13,15 @@ import {
   useAllEmployeeLoans,
   useCreateEmployeeEarning,
   useCreateEmployeeLoan,
+  useDeleteEmployeeEarning,
   useDeleteEmployeeLoan,
+  useEmployeeEarnings,
   useEmployees,
+  useUpdateEmployeeEarning,
   useUpdateEmployeeLoan,
   useUpdateEmployeeSalary,
 } from "@/hooks/use-attendance-data";
-import type { Employee, EmployeeLoan } from "@/types/attendance";
+import type { Employee, EmployeeEarning, EmployeeLoan } from "@/types/attendance";
 
 function money(value: number | string) {
   return new Intl.NumberFormat("en-PK", {
@@ -60,12 +63,22 @@ export default function PayrollPage() {
   const updateLoan = useUpdateEmployeeLoan();
   const deleteLoan = useDeleteEmployeeLoan();
   const createEarning = useCreateEmployeeEarning();
+  const updateEarning = useUpdateEmployeeEarning();
+  const deleteEarning = useDeleteEmployeeEarning();
   const [search, setSearch] = useState("");
   const [salaryDrafts, setSalaryDrafts] = useState<Record<string, string>>({});
   const [allowanceDrafts, setAllowanceDrafts] = useState<Record<string, string>>({});
   const [loanEmployee, setLoanEmployee] = useState<Employee | null>(null);
   const [editingLoan, setEditingLoan] = useState<EmployeeLoan | null>(null);
   const [loanForm, setLoanForm] = useState<LoanForm>(emptyLoanForm);
+  const [earningEmployee, setEarningEmployee] = useState<Employee | null>(null);
+  const [editingEarning, setEditingEarning] = useState<EmployeeEarning | null>(null);
+  const [earningType, setEarningType] = useState<EmployeeEarning["type"]>("BONUS");
+  const [earningAmount, setEarningAmount] = useState("");
+  const [earningPercentage, setEarningPercentage] = useState("");
+  const [earningDescription, setEarningDescription] = useState("");
+  const earningMonth = currentCycleMonth();
+  const employeeEarnings = useEmployeeEarnings(earningEmployee?.id ?? "", earningMonth);
 
   useEffect(() => {
     if (!employees.data) return;
@@ -100,6 +113,19 @@ export default function PayrollPage() {
       )
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [employees.data, search]);
+
+  const payrollSummary = useMemo(() => ({
+    employees: rows.length,
+    salary: rows.reduce((total, employee) => total + Number(employee.monthlySalary), 0),
+    allowance: rows.reduce((total, employee) => total + Number(employee.allowance), 0),
+    loans: rows.reduce(
+      (total, employee) =>
+        total + (loansByEmployee.get(employee.id) ?? [])
+          .filter((loan) => loan.status === "ACTIVE")
+          .reduce((sum, loan) => sum + Number(loan.monthlyInstallment), 0),
+      0,
+    ),
+  }), [loansByEmployee, rows]);
 
   const saveCompensation = async (employee: Employee) => {
     const salary = Number(salaryDrafts[employee.id]);
@@ -209,36 +235,96 @@ export default function PayrollPage() {
     }
   };
 
-  const addEarning = async (employee: Employee) => {
-    const result = await Swal.fire({
-      title: `Add earning · ${employee.name}`,
-      html: `<input id="earning-type" class="swal2-input" value="BONUS" placeholder="BONUS or COMMISSION"><input id="earning-amount" class="swal2-input" type="number" min="0" step="0.01" placeholder="Amount"><input id="earning-percent" class="swal2-input" type="number" min="0" max="100" step="0.01" placeholder="Commission % (optional)"><input id="earning-description" class="swal2-input" placeholder="Description (optional)">`,
-      showCancelButton: true,
-      confirmButtonText: "Add earning",
-      confirmButtonColor: "#171717",
-      preConfirm: () => {
-        const popup = Swal.getPopup();
-        const type = popup?.querySelector<HTMLInputElement>("#earning-type")?.value.trim().toUpperCase();
-        const amount = Number(popup?.querySelector<HTMLInputElement>("#earning-amount")?.value);
-        const percentValue = popup?.querySelector<HTMLInputElement>("#earning-percent")?.value;
-        const percentage = percentValue ? Number(percentValue) : undefined;
-        if (type !== "BONUS" && type !== "COMMISSION") return Swal.showValidationMessage("Type must be BONUS or COMMISSION.");
-        if (!Number.isFinite(amount) || amount < 0) return Swal.showValidationMessage("Enter a valid amount.");
-        if (percentage !== undefined && (!Number.isFinite(percentage) || percentage < 0 || percentage > 100)) return Swal.showValidationMessage("Percentage must be between 0 and 100.");
-        return { type, amount, percentage, description: popup?.querySelector<HTMLInputElement>("#earning-description")?.value ?? "" };
-      },
-    });
-    if (!result.isConfirmed || !result.value) return;
+  const openEarningForm = (employee: Employee, earning?: EmployeeEarning) => {
+    setEarningEmployee(employee);
+    setEditingEarning(earning ?? null);
+    setEarningType(earning?.type ?? "BONUS");
+    setEarningAmount(earning?.amount ?? "");
+    setEarningPercentage(earning?.percentage ?? "");
+    setEarningDescription(earning?.description ?? "");
+  };
+
+  const saveEarning = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!earningEmployee) return;
+    const amount = Number(earningAmount);
+    const percentage = earningPercentage.trim() ? Number(earningPercentage) : undefined;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      await Swal.fire({ icon: "error", title: "Enter an amount", text: "The earning amount must be greater than zero." });
+      return;
+    }
+    if (percentage !== undefined && (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100)) {
+      await Swal.fire({ icon: "error", title: "Invalid percentage", text: "Commission percentage must be between 0 and 100." });
+      return;
+    }
     try {
-      await createEarning.mutateAsync({ employeeId: employee.id, ...result.value, payrollCycleMonth: currentCycleMonth() });
-      await Swal.fire({ icon: "success", title: "Earning added", timer: 1000, showConfirmButton: false });
+      if (editingEarning) {
+        await updateEarning.mutateAsync({
+          employeeId: earningEmployee.id,
+          earningId: editingEarning.id,
+          type: earningType,
+          amount,
+          percentage: earningType === "COMMISSION" ? percentage ?? null : null,
+          payrollCycleMonth: earningMonth,
+          description: earningDescription.trim() || null,
+        });
+      } else {
+        await createEarning.mutateAsync({
+          employeeId: earningEmployee.id,
+          type: earningType,
+          amount,
+          percentage: earningType === "COMMISSION" ? percentage : undefined,
+          payrollCycleMonth: earningMonth,
+          description: earningDescription.trim() || undefined,
+        });
+      }
+      setEditingEarning(null);
+      setEarningAmount("");
+      setEarningPercentage("");
+      setEarningDescription("");
+      await employeeEarnings.refetch();
+      await Swal.fire({ icon: "success", title: editingEarning ? "Earning updated" : "Earning saved", text: "Saved to the VPS database for this payroll cycle.", timer: 1400, showConfirmButton: false });
     } catch (error) {
-      await Swal.fire({ icon: "error", title: "Could not add earning", text: error instanceof Error ? error.message : "Please try again." });
+      await Swal.fire({ icon: "error", title: editingEarning ? "Could not update earning" : "Could not add earning", text: error instanceof Error ? error.message : "Please try again." });
+    }
+  };
+
+  const removeEarning = async (earning: EmployeeEarning) => {
+    if (!earningEmployee) return;
+    const confirmation = await Swal.fire({
+      icon: "warning",
+      title: "Remove earning?",
+      text: `Remove this ${earning.type === "BONUS" ? "bonus" : "commission"} from ${earningEmployee.name}'s ${earningMonth} payroll cycle?`,
+      showCancelButton: true,
+      confirmButtonText: "Remove",
+      confirmButtonColor: "#dc2626",
+    });
+    if (!confirmation.isConfirmed) return;
+    try {
+      await deleteEarning.mutateAsync({ employeeId: earningEmployee.id, earningId: earning.id });
+      if (editingEarning?.id === earning.id) setEditingEarning(null);
+      await employeeEarnings.refetch();
+      await Swal.fire({ icon: "success", title: "Earning removed", timer: 1100, showConfirmButton: false });
+    } catch (error) {
+      await Swal.fire({ icon: "error", title: "Could not remove earning", text: error instanceof Error ? error.message : "Please try again." });
     }
   };
 
   return (
     <AppShell title="Payroll" description="Manage salary, allowance, earnings, and employee loan deductions.">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Active employees", payrollSummary.employees, "text-slate-700 bg-slate-50"],
+          ["Monthly salary", money(payrollSummary.salary), "text-emerald-700 bg-emerald-50"],
+          ["Allowances", money(payrollSummary.allowance), "text-sky-700 bg-sky-50"],
+          ["Loan installments", money(payrollSummary.loans), "text-amber-800 bg-amber-50"],
+        ].map(([label, value, tone]) => (
+          <div className={`rounded-xl border border-border px-4 py-3 shadow-sm ${tone}`} key={String(label)}>
+            <p className="text-xs font-medium uppercase tracking-wide opacity-75">{label}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
+          </div>
+        ))}
+      </div>
       <Panel>
         <PanelHeader className="flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -248,7 +334,7 @@ export default function PayrollPage() {
           <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input className="h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none sm:w-64" onChange={(event) => setSearch(event.target.value)} placeholder="Search employee or code" value={search} /></div>
         </PanelHeader>
         <PanelBody className="p-0">
-          <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-table-scroll>
             <table className="w-full min-w-[1220px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground"><tr><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Monthly salary</th><th className="px-4 py-3">Allowance</th><th className="px-4 py-3">Bonus / commission</th><th className="px-4 py-3">Loans</th><th className="px-4 py-3">Actions</th></tr></thead>
               <tbody className="divide-y divide-border">
@@ -259,7 +345,7 @@ export default function PayrollPage() {
                     <td className="px-4 py-4"><p className="font-medium">{employee.name}</p><p className="text-xs text-muted-foreground">{employee.employeeCode} · {employee.isActive ? "Active" : "Inactive"}</p></td>
                     <td className="px-4 py-4"><input className="h-9 w-36 rounded-md border border-input bg-background px-3 text-sm" type="number" min="0" value={salaryDrafts[employee.id] ?? employee.monthlySalary} onChange={(event) => setSalaryDrafts((current) => ({ ...current, [employee.id]: event.target.value }))} /></td>
                     <td className="px-4 py-4"><input className="h-9 w-36 rounded-md border border-input bg-background px-3 text-sm" type="number" min="0" value={allowanceDrafts[employee.id] ?? employee.allowance} onChange={(event) => setAllowanceDrafts((current) => ({ ...current, [employee.id]: event.target.value }))} /></td>
-                    <td className="px-4 py-4"><p className="font-medium">Manage cycle earnings</p><p className="text-xs text-muted-foreground">Use the add button for bonus or commission.</p><Button className="mt-2" onClick={() => void addEarning(employee)} type="button" variant="secondary"><Plus className="size-4" /> Add earning</Button></td>
+                    <td className="px-4 py-4"><p className="font-medium">Manage cycle earnings</p><p className="text-xs text-muted-foreground">Use the add button for bonus or commission.</p><Button className="mt-2" onClick={() => openEarningForm(employee)} type="button" variant="secondary"><Plus className="size-4" /> Add earning</Button></td>
                     <td className="px-4 py-4"><p className="font-medium">{activeLoans.length ? `${activeLoans.length} active · ${money(activeLoans.reduce((sum, loan) => sum + Number(loan.monthlyInstallment), 0))}/cycle` : "No active loan"}</p><div className="mt-2 space-y-1">{employeeLoans.map((loan) => <div className="flex items-center gap-2 text-xs" key={loan.id}><Badge tone={loan.status === "ACTIVE" ? "green" : "neutral"}>{loan.status}</Badge><span>{money(loan.monthlyInstallment)} × {loan.numberOfInstallments}</span><button aria-label="Edit loan" className="text-muted-foreground hover:text-foreground" onClick={() => openLoanForm(employee, loan)} type="button"><Pencil className="size-3" /></button><button aria-label="Remove loan" className="text-red-600" onClick={() => void removeLoan(employee, loan)} type="button"><Trash2 className="size-3" /></button></div>)}</div><Button className="mt-2" onClick={() => openLoanForm(employee)} type="button" variant="secondary"><Plus className="size-4" /> Add loan</Button></td>
                     <td className="px-4 py-4"><Button disabled={updateSalary.isPending} onClick={() => void saveCompensation(employee)} type="button"><Pencil className="size-4" /> Save compensation</Button></td>
                   </tr>;
@@ -272,6 +358,39 @@ export default function PayrollPage() {
       </Panel>
 
       {loanEmployee ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true"><form className="w-full max-w-lg rounded-2xl border border-border bg-card p-5 shadow-2xl" onSubmit={(event) => void saveLoan(event)}><div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">{editingLoan ? "Edit loan" : "Add loan"}</h2><p className="text-sm text-muted-foreground">{loanEmployee.name} · {loanEmployee.employeeCode}</p></div><button aria-label="Close" className="rounded-md p-2 hover:bg-muted" onClick={() => setLoanEmployee(null)} type="button"><X className="size-4" /></button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><label className="text-xs text-muted-foreground">Principal amount<input className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" type="number" min="0.01" step="0.01" required value={loanForm.principalAmount} onChange={(event) => setLoanForm((current) => ({ ...current, principalAmount: event.target.value }))} /></label><label className="text-xs text-muted-foreground">Monthly installment<input className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" type="number" min="0.01" step="0.01" required value={loanForm.monthlyInstallment} onChange={(event) => setLoanForm((current) => ({ ...current, monthlyInstallment: event.target.value }))} /></label><label className="text-xs text-muted-foreground">Start payroll cycle<input className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" type="month" required value={loanForm.startCycleMonth} onChange={(event) => setLoanForm((current) => ({ ...current, startCycleMonth: event.target.value }))} /></label><label className="text-xs text-muted-foreground">Number of installments<input className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" type="number" min="1" step="1" required value={loanForm.numberOfInstallments} onChange={(event) => setLoanForm((current) => ({ ...current, numberOfInstallments: event.target.value }))} /></label><label className="text-xs text-muted-foreground">Status<select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" disabled={!editingLoan} value={loanForm.status} onChange={(event) => setLoanForm((current) => ({ ...current, status: event.target.value as EmployeeLoan["status"] }))}><option value="ACTIVE">Active</option><option value="PAUSED">Paused</option><option value="PAID">Paid</option><option value="CANCELLED">Cancelled</option></select></label><label className="text-xs text-muted-foreground">Description (optional)<input className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground" value={loanForm.description} onChange={(event) => setLoanForm((current) => ({ ...current, description: event.target.value }))} /></label></div><div className="mt-5 flex justify-end gap-2"><Button onClick={() => setLoanEmployee(null)} type="button" variant="secondary">Cancel</Button><Button disabled={createLoan.isPending || updateLoan.isPending} type="submit">{editingLoan ? "Update loan" : "Add loan"}</Button></div></form></div> : null}
+      {earningEmployee ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4" role="dialog" aria-modal="true">
+          <form className="max-h-[min(760px,calc(100vh-2rem))] w-full max-w-2xl overflow-y-auto border border-border bg-card shadow-lg" onSubmit={(event) => void saveEarning(event)}>
+            <div className="border-b border-border bg-gradient-to-r from-emerald-50 via-white to-sky-50 px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex gap-3">
+                  <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700"><Sparkles className="size-5" /></div>
+                  <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Payroll earning</p><h2 className="mt-1 text-xl font-semibold tracking-tight">Add earning for {earningEmployee.name}</h2><p className="mt-1 text-sm text-muted-foreground">Employee {earningEmployee.employeeCode} · cycle {earningMonth}</p></div>
+                </div>
+                <button aria-label="Close" className="rounded-full border border-border bg-white p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground" onClick={() => setEarningEmployee(null)} type="button"><X className="size-4" /></button>
+              </div>
+            </div>
+            <div className="space-y-5 p-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-border bg-muted/20 p-4"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><CalendarDays className="size-4" /> Payroll cycle</div><p className="mt-2 font-semibold">{earningMonth}</p></div>
+                <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:col-span-2"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><CheckCircle2 className="size-4 text-emerald-600" /> Saved earnings this cycle</div><p className="mt-2 font-semibold">{employeeEarnings.isLoading ? "Loading…" : `${employeeEarnings.data?.length ?? 0} earning${employeeEarnings.data?.length === 1 ? "" : "s"}`}</p></div>
+              </div>
+              <div className="rounded-2xl border border-border bg-background p-4">
+                <div className="mb-4 flex items-center justify-between gap-3"><div><h3 className="font-semibold">{editingEarning ? "Edit earning" : "New earning"}</h3><p className="text-xs text-muted-foreground">This record is saved directly to the VPS database.</p></div><Badge tone="green">{earningType === "BONUS" ? "Bonus" : "Commission"}</Badge></div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="text-sm font-medium">Earning type<select className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" value={earningType} onChange={(event) => { const type = event.target.value as EmployeeEarning["type"]; setEarningType(type); if (type === "BONUS") setEarningPercentage(""); }}><option value="BONUS">Bonus</option><option value="COMMISSION">Commission</option></select></label>
+                  <label className="text-sm font-medium">Fixed amount<input className="mt-1.5 h-11 w-full rounded-xl border border-input bg-background px-3 text-sm" type="number" min="0.01" step="0.01" required value={earningAmount} onChange={(event) => setEarningAmount(event.target.value)} placeholder="e.g. 15000" /></label>
+                  {earningType === "COMMISSION" ? <label className="text-sm font-medium">Commission percentage <span className="font-normal text-muted-foreground">(optional)</span><div className="relative mt-1.5"><Percent className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm" type="number" min="0.01" max="100" step="0.01" value={earningPercentage} onChange={(event) => setEarningPercentage(event.target.value)} placeholder="e.g. 5" /></div></label> : null}
+                  <label className="text-sm font-medium sm:col-span-2">Description <span className="font-normal text-muted-foreground">(optional)</span><div className="relative mt-1.5"><FileText className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" /><input className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm" value={earningDescription} onChange={(event) => setEarningDescription(event.target.value)} placeholder="What is this earning for?" /></div></label>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-900"><p className="font-medium">How earnings work</p><p className="mt-1 text-xs leading-5 text-sky-800">Earnings are added to this employee’s selected payroll cycle and are included in the payable salary after saving.</p></div>
+              {employeeEarnings.data?.length ? <div><h3 className="mb-2 text-sm font-semibold">Already saved for {earningMonth}</h3><div className="divide-y divide-border rounded-2xl border border-border">{employeeEarnings.data.map((earning) => <div className="flex items-center justify-between gap-4 px-4 py-3" key={earning.id}><div><p className="font-medium">{earning.type === "BONUS" ? "Bonus" : "Commission"}</p><p className="text-xs text-muted-foreground">{earning.description || "No description"}{earning.percentage ? ` · ${earning.percentage}%` : ""}</p></div><div className="flex items-center gap-3 text-right"><div><p className="font-semibold text-emerald-700">{money(earning.amount)}</p><Badge tone={earning.status === "CANCELLED" ? "red" : earning.status === "PAID" ? "blue" : "green"}>{earning.status}</Badge></div><div className="flex items-center gap-1"><button aria-label={`Edit ${earning.type === "BONUS" ? "bonus" : "commission"}`} className="grid size-8 place-items-center border border-border text-muted-foreground transition hover:bg-muted hover:text-foreground" onClick={() => openEarningForm(earningEmployee, earning)} type="button"><Pencil className="size-4" /></button><button aria-label={`Remove ${earning.type === "BONUS" ? "bonus" : "commission"}`} className="grid size-8 place-items-center border border-red-200 text-red-600 transition hover:bg-red-50" disabled={deleteEarning.isPending} onClick={() => void removeEarning(earning)} type="button"><Trash2 className="size-4" /></button></div></div></div>)}</div></div> : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border bg-muted/20 px-6 py-4"><Button onClick={() => setEarningEmployee(null)} type="button" variant="secondary">Done</Button><Button disabled={createEarning.isPending || updateEarning.isPending} type="submit">{editingEarning ? <Pencil className="size-4" /> : <Plus className="size-4" />} {createEarning.isPending || updateEarning.isPending ? "Saving…" : editingEarning ? "Update earning" : "Add earning"}</Button></div>
+          </form>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

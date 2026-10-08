@@ -18,6 +18,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
@@ -34,19 +35,24 @@ const navGroups = [
     ],
   },
   {
-    label: "Workforce",
+    label: "People & attendance",
     items: [
       { href: "/employees", label: "Employees", icon: UsersRound },
       { href: "/attendance", label: "Attendance", icon: CalendarDays },
       { href: "/shifts", label: "Shifts", icon: Clock4 },
-      { href: "/leave-remote", label: "Leave & Remote", icon: CalendarRange },
+      { href: "/leave-remote", label: "Leave & remote", icon: CalendarRange },
     ],
   },
   {
-    label: "Payroll & reports",
+    label: "Payroll",
     items: [
       { href: "/payroll", label: "Payroll", icon: WalletCards },
       { href: "/reports", label: "Reports", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Employee requests",
+    items: [
       { href: "/requests", label: "Requests", icon: Inbox },
     ],
   },
@@ -54,8 +60,8 @@ const navGroups = [
     label: "System",
     items: [
       { href: "/devices", label: "Devices", icon: Fingerprint },
-      { href: "/raw-data", label: "Raw Data", icon: Rows3 },
-      { href: "/email-password", label: "Email / Password", icon: KeyRound },
+      { href: "/raw-data", label: "Raw punches", icon: Rows3 },
+      { href: "/email-password", label: "Credentials", icon: KeyRound },
     ],
   },
 ];
@@ -72,15 +78,25 @@ export function AppShell({ children, title, description }: AppShellProps) {
   const pathname = usePathname();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const user = useAuthStore((state) => state.user);
   const realtimeConnected = useRealtimeStore((state) => state.connected);
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-muted/30 text-foreground">
+        {mobileNavOpen ? (
+          <button
+            aria-label="Close navigation"
+            className="fixed inset-0 z-40 bg-slate-950/35 md:hidden"
+            onClick={() => setMobileNavOpen(false)}
+            type="button"
+          />
+        ) : null}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-sidebar md:flex",
+            "fixed inset-y-0 left-0 z-50 hidden w-[min(18rem,88vw)] flex-col border-r border-border bg-sidebar shadow-xl md:z-30 md:flex md:w-64 md:shadow-none",
+            mobileNavOpen && "flex",
             !sidebarOpen && "md:w-16",
           )}
         >
@@ -104,11 +120,11 @@ export function AppShell({ children, title, description }: AppShellProps) {
             ) : null}
           </div>
 
-          <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-4">
+          <nav className="flex-1 space-y-5 overflow-y-auto px-2 py-4">
             {navGroups.map((group) => (
               <div key={group.label}>
                 {sidebarOpen ? (
-                  <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
                     {group.label}
                   </p>
                 ) : null}
@@ -120,12 +136,13 @@ export function AppShell({ children, title, description }: AppShellProps) {
                     return (
                       <Link
                         className={cn(
-                          "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-accent",
-                          active && "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
+                          "flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-sidebar-foreground transition hover:bg-sidebar-accent",
+                          active && "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm ring-1 ring-sidebar-border",
                           !sidebarOpen && "justify-center px-0",
                         )}
                         href={item.href}
                         key={item.href}
+                        onClick={() => setMobileNavOpen(false)}
                         title={item.label}
                       >
                         <Icon className="size-4 shrink-0" />
@@ -141,13 +158,19 @@ export function AppShell({ children, title, description }: AppShellProps) {
         </aside>
 
         <div className={cn("md:pl-64", !sidebarOpen && "md:pl-16")}>
-          <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
+          <header className="sticky top-0 z-50 border-b border-border bg-background">
             <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
               <div className="flex items-center gap-3">
-                <Button
+                  <Button
                   aria-label="Toggle navigation"
                   className="size-9 p-0"
-                  onClick={toggleSidebar}
+                  onClick={() => {
+                    if (window.innerWidth < 768) {
+                      setMobileNavOpen((open) => !open);
+                    } else {
+                      toggleSidebar();
+                    }
+                  }}
                   title="Toggle navigation"
                   type="button"
                   variant="ghost"
@@ -183,29 +206,16 @@ export function AppShell({ children, title, description }: AppShellProps) {
                 </div>
               </div>
             </div>
-            <nav className="flex gap-1 overflow-x-auto border-t border-border px-3 py-2 md:hidden">
-              {navItems.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
-
-                return (
-                  <Link
-                    className={cn(
-                      "inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground",
-                      active && "bg-muted text-foreground",
-                    )}
-                    href={item.href}
-                    key={item.href}
-                  >
-                    <Icon className="size-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            <div className="flex items-center gap-2 border-t border-border px-3 py-2 md:hidden">
+              <button className="text-xs font-medium text-muted-foreground" onClick={() => setMobileNavOpen(true)} type="button">
+                Open navigation
+              </button>
+              <span className="text-xs text-muted-foreground">·</span>
+              <span className="truncate text-xs font-medium">{navItems.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))?.label ?? "Workspace"}</span>
+            </div>
           </header>
 
-          <main className="px-4 py-5 sm:px-6">{children}</main>
+          <main className="p-0">{children}</main>
         </div>
       </div>
     </ProtectedRoute>

@@ -112,7 +112,7 @@ export function PayrollReportPanel() {
           ))}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-table-scroll>
           <table className="w-full min-w-[1570px] text-left text-sm">
             <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
@@ -194,7 +194,7 @@ export function PayrollReportPanel() {
     {selectedEmployee && report ? (
       <div
         aria-modal="true"
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
         onMouseDown={(event) => {
           if (event.currentTarget === event.target) {
             setSelectedEmployee(null);
@@ -202,7 +202,7 @@ export function PayrollReportPanel() {
         }}
         role="dialog"
       >
-        <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden border border-border bg-card shadow-lg">
           <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
             <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

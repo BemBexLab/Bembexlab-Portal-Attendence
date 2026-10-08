@@ -115,7 +115,7 @@ export default function RawDataPage() {
         </PanelHeader>
         {!validRange ? <p className="border-b border-border px-4 py-2 text-sm text-destructive">From date must be before To date.</p> : null}
         <PanelBody className="p-0">
-          <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-table-scroll>
             <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>

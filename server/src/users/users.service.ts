@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, BadRequestException } from '@nestjs/common';
 import {
+  EmployeeEarningType,
   EmployeeEarningStatus,
   EmployeeLoanStatus,
   User,
@@ -15,6 +16,7 @@ import {
 } from '../attendance/utils/timezone';
 import { UpdateEmployeeCredentialsDto } from './dto/update-employee-credentials.dto';
 import { CreateEmployeeEarningDto } from './dto/create-employee-earning.dto';
+import { UpdateEmployeeEarningDto } from './dto/update-employee-earning.dto';
 import { UpdateEmployeeEarningStatusDto } from './dto/update-employee-earning-status.dto';
 import { CreateEmployeeLoanDto } from './dto/create-employee-loan.dto';
 import { UpdateEmployeeLoanDto } from './dto/update-employee-loan.dto';
@@ -622,6 +624,43 @@ export class UsersService {
     const updated = await this.prisma.employeeEarning.update({
       where: { id: earningId },
       data: { status: dto.status },
+    });
+    return {
+      ...updated,
+      amount: updated.amount.toString(),
+      percentage: updated.percentage?.toString() ?? null,
+    };
+  }
+
+  async updateEmployeeEarning(
+    user: CurrentUser,
+    employeeId: string,
+    earningId: string,
+    dto: UpdateEmployeeEarningDto,
+  ) {
+    await this.getEmployeeForEarnings(user, employeeId);
+    const earning = await this.prisma.employeeEarning.findFirst({
+      where: { id: earningId, employeeId },
+    });
+    if (!earning) throw new BadRequestException('Earning not found');
+
+    const updated = await this.prisma.employeeEarning.update({
+      where: { id: earningId },
+      data: {
+        ...(dto.type === undefined ? {} : { type: dto.type }),
+        ...(dto.amount === undefined ? {} : { amount: dto.amount }),
+        ...(dto.payrollCycleMonth === undefined
+          ? {}
+          : { payrollCycleMonth: dto.payrollCycleMonth }),
+        ...(dto.description === undefined
+          ? {}
+          : { description: dto.description?.trim() || null }),
+        ...(dto.percentage !== undefined
+          ? { percentage: dto.percentage }
+          : dto.type === EmployeeEarningType.BONUS
+            ? { percentage: null }
+            : {}),
+      },
     });
     return {
       ...updated,
