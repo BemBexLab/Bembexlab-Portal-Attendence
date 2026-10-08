@@ -28,6 +28,8 @@ pnpm-debug.log*
 .env.*
 !.env.example
 !*.env.example
+!**/.env.*.example
+!**/.env.example
 
 # Prisma generated clients
 **/generated/prisma/

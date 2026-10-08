@@ -16,8 +16,9 @@ The K40 IP `192.168.10.197` is private LAN space. A public VPS cannot reach it u
 ## Backend
 
 ```bash
-cd /var/www/bembex-portal/server
-cp .env.production.example .env
+cd /var/www/bembex-portal
+cp server/.env.production.example .env
+cd server
 npm ci
 npm run prisma:generate
 npm run build
@@ -33,16 +34,17 @@ Health check:
 curl http://localhost:4000/api/health
 ```
 
-## Frontend
+## Frontend on Vercel
 
-```bash
-cd /var/www/bembex-portal/client
-cp .env.production.example .env.production
-npm ci
-npm run build
-```
+Deploy `client/` from the GitHub repository with Vercel's Root Directory set to
+`client`. Add `API_URL` to the Vercel project environment variables for
+Production and Preview. It must be the public VPS API origin, for example
+`https://api.example.com`, without an `/api` suffix. Redeploy after setting it.
 
-`NEXT_PUBLIC_API_URL` must point to the public API origin, for example `https://api.example.com`.
+The browser calls the same-origin `/api` and `/socket.io` paths; Next.js proxies
+those requests to the VPS using `API_URL`. The repository-root `.env` is for
+local development or VPS runtime only; it is Git-ignored and is not uploaded to
+Vercel.
 
 ## PM2
 
@@ -107,7 +109,7 @@ For production prefer `REDIS_URL`:
 REDIS_URL="redis://default:password@host:6379"
 ```
 
-BullMQ attendance workers use Redis, so `/health` should report Redis as `ok`.
+BullMQ attendance workers use Redis, so `/api/health` should report Redis as `ok`.
 
 ## Database Backup
 

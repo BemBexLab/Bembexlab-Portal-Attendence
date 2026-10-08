@@ -9,11 +9,18 @@ loadEnvConfig(path.resolve(process.cwd(), ".."));
 const nextConfig: NextConfig = {
   devIndicators: false,
   async rewrites() {
-    const apiUrl = (
-      process.env.API_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      "http://localhost:4000"
-    ).replace(/\/$/, "");
+    const configuredApiUrl = process.env.API_URL?.trim();
+
+    if (process.env.NODE_ENV === "production" && !configuredApiUrl) {
+      throw new Error(
+        "API_URL must be set to the public VPS API origin for production builds.",
+      );
+    }
+
+    const apiUrl = (configuredApiUrl || "http://localhost:4000").replace(
+      /\/$/,
+      "",
+    );
 
     return [
       {
