@@ -143,7 +143,12 @@ export default function RequestsPage() {
     const confirmation = await Swal.fire({
       title: `Change status to ${nextStatus}?`,
       text: `Update ${request.employee}'s ${requestLabel(request.kind).toLowerCase()} request from ${statusLabel(request.status).toLowerCase()} to ${nextStatus.toLowerCase()}?`,
-      icon: "question",
+      icon:
+        status === "APPROVED"
+          ? "success"
+          : status === "REJECTED"
+            ? "warning"
+            : "info",
       showCancelButton: true,
       confirmButtonText: "Update status",
       cancelButtonText: "Cancel",

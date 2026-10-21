@@ -430,6 +430,12 @@ div.swal2-icon.swal2-success [class*="swal2-success-fix"] {
     border-radius: 0.625rem !important;
   }
 
+  /* SweetAlert2's status icon is designed as a circle. Keep the portal's
+     global radius reset from turning it into a rounded square. */
+  .swal2-icon {
+    border-radius: 50% !important;
+  }
+
   .swal2-close {
     border-radius: 999px !important;
   }
