@@ -5,21 +5,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Employee, EmployeeCredential, EmployeeRequest, Shift } from "@/types/attendance";
 
 import {
-  fetchDeviceInfo,
   getAttendanceRows,
   getAttendanceRowsForRange,
   getAnalytics,
   getDashboardSummary,
-  getDevices,
-  createDevice,
-  updateDevice,
-  deleteDevice,
-  getDirectDeviceAttendance,
   getEmployees,
   getEmployeeCredentials,
   getEmployeeRequests,
-  syncDeviceAttendance,
-  testDevice,
   updateAttendanceStatus,
   assignBulkAttendanceStatus,
   getScheduledAttendanceStatuses,
@@ -43,14 +35,12 @@ import {
   updateShift,
   deleteShift,
   assignEmployeeShift,
-  backfillDeviceAttendance,
 } from "@/services/attendance-service";
 
 export const attendanceKeys = {
   summary: ["dashboard", "summary"] as const,
   attendance: ["attendance"] as const,
   employees: ["employees"] as const,
-  devices: ["devices"] as const,
   departments: ["reports", "departments"] as const,
   trend: ["reports", "trend"] as const,
   scheduledStatuses: ["attendance", "scheduled-statuses"] as const,
@@ -217,20 +207,6 @@ export function useUpdateEmployeeRequestStatus() {
 
 export function useShifts() {
   return useQuery({ queryKey: attendanceKeys.shifts, queryFn: getShifts });
-}
-
-export function useDirectDeviceAttendance(
-  deviceId: string,
-  search?: string,
-  from?: string,
-  to?: string,
-) {
-  return useQuery({
-    queryKey: ["devices", deviceId, "historical-attendance", search, from, to],
-    queryFn: () => getDirectDeviceAttendance(deviceId, { search, from, to }),
-    enabled: true,
-    staleTime: 60_000,
-  });
 }
 
 export function useCreateShift() {
@@ -479,110 +455,6 @@ export function useDeleteEmployeeLoan() {
       });
       void queryClient.invalidateQueries({ queryKey: ["employee-loans", "all"] });
       void queryClient.invalidateQueries({ queryKey: ["reports", "payroll"] });
-    },
-  });
-}
-
-export function useDevices() {
-  return useQuery({
-    queryKey: attendanceKeys.devices,
-    queryFn: getDevices,
-  });
-}
-
-export function useCreateDevice() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: createDevice,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
-      ]);
-    },
-  });
-}
-
-export function useUpdateDevice() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: updateDevice,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
-      ]);
-    },
-  });
-}
-
-export function useDeleteDevice() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: deleteDevice,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
-      ]);
-    },
-  });
-}
-
-export function useTestDevice() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: testDevice,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: attendanceKeys.devices });
-      await queryClient.invalidateQueries({ queryKey: attendanceKeys.summary });
-    },
-  });
-}
-
-export function useFetchDeviceInfo() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: fetchDeviceInfo,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: attendanceKeys.devices });
-    },
-  });
-}
-
-export function useSyncDeviceAttendance() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: syncDeviceAttendance,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
-        queryClient.invalidateQueries({ queryKey: ["reports"] }),
-      ]);
-    },
-  });
-}
-
-export function useBackfillDeviceAttendance() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: backfillDeviceAttendance,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.devices }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.summary }),
-        queryClient.invalidateQueries({ queryKey: attendanceKeys.attendance }),
-        queryClient.invalidateQueries({ queryKey: ["reports"] }),
-      ]);
     },
   });
 }

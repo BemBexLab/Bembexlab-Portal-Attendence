@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import type { AttendanceStatus, DeviceStatus } from "@/types/attendance";
+import type { AttendanceStatus } from "@/types/attendance";
 
 export function AttendanceStatusBadge({ status }: { status: AttendanceStatus }) {
   if (status === "NOT_STARTED") {
@@ -37,20 +37,4 @@ export function AttendanceStatusBadge({ status }: { status: AttendanceStatus }) 
   }
 
   return <Badge tone="red">Absent</Badge>;
-}
-
-export function DeviceStatusBadge({ status }: { status: DeviceStatus }) {
-  if (status === "ACTIVE") {
-    return <Badge tone="green">Active</Badge>;
-  }
-
-  if (status === "OFFLINE") {
-    return <Badge tone="red">Offline</Badge>;
-  }
-
-  if (status === "MAINTENANCE") {
-    return <Badge tone="amber">Maintenance</Badge>;
-  }
-
-  return <Badge>Inactive</Badge>;
 }

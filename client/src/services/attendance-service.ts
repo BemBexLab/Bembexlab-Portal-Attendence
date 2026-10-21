@@ -5,10 +5,6 @@ import type {
   AttendanceTrend,
   DailyReport,
   DepartmentAttendance,
-  Device,
-  DeviceInfoResponse,
-  DirectDeviceAttendanceResponse,
-  DeviceSyncResult,
   Employee,
   EmployeeEarning,
   EmployeeLoan,
@@ -304,42 +300,6 @@ export async function getAttendanceRowsForRange(from: string, to: string) {
   };
 }
 
-export async function getDevices() {
-  const response = await api.get<Device[]>("/devices");
-  return response.data;
-}
-
-export async function createDevice(input: {
-  name: string;
-  ip: string;
-  port: number;
-  status?: Device["status"];
-}) {
-  const response = await api.post<Device>("/devices", input);
-  return response.data;
-}
-
-export async function updateDevice(input: {
-  id: string;
-  name?: string;
-  ip?: string;
-  port?: number;
-  status?: Device["status"];
-}) {
-  const { id, ...data } = input;
-  const response = await api.patch<Device>(`/devices/${id}`, data);
-  return response.data;
-}
-
-export async function deleteDevice(id: string) {
-  const response = await api.delete<{
-    removed: boolean;
-    deactivated: boolean;
-    preservedLogs: number;
-  }>(`/devices/${id}`);
-  return response.data;
-}
-
 export async function getDepartmentAttendance() {
   const analytics = await getAnalytics();
   return analytics.departments.map<DepartmentAttendance>((department) => ({
@@ -360,62 +320,14 @@ export async function getAttendanceTrend() {
 }
 
 export async function getDashboardSummary() {
-  const [dailyReport, liveDevices] = await Promise.all([
-    getDailyReport(),
-    getDevices(),
-  ]);
+  const dailyReport = await getDailyReport();
 
   return {
     totalEmployees: dailyReport.summary.totalEmployees,
     presentCount: dailyReport.summary.presentCount,
     absentCount: dailyReport.summary.absentCount,
     lateCount: dailyReport.summary.lateCount,
-    activeDevices: liveDevices.filter((device) => device.status === "ACTIVE")
-      .length,
-    offlineDevices: liveDevices.filter((device) => device.status === "OFFLINE")
-      .length,
   };
-}
-
-export async function testDevice(deviceId: string) {
-  const response = await api.post<{ online: boolean; latencyMs: number }>(
-    `/devices/${deviceId}/test`,
-  );
-  return response.data;
-}
-
-export async function fetchDeviceInfo(deviceId: string) {
-  const response = await api.get<DeviceInfoResponse>(
-    `/devices/${deviceId}/info`,
-  );
-  return response.data;
-}
-
-export async function syncDeviceAttendance(deviceId: string) {
-  const response = await api.post<DeviceSyncResult>(
-    `/devices/${deviceId}/sync-attendance`,
-  );
-  return response.data;
-}
-
-export async function backfillDeviceAttendance(deviceId: string) {
-  const response = await api.post<DeviceSyncResult>(
-    `/devices/${deviceId}/backfill-attendance`,
-  );
-  return response.data;
-}
-
-export async function getDirectDeviceAttendance(
-  deviceId: string,
-  params?: { search?: string; from?: string; to?: string },
-) {
-  const response = await api.get<DirectDeviceAttendanceResponse>(
-    deviceId
-      ? `/devices/${deviceId}/historical-attendance`
-      : "/devices/historical-attendance",
-    { params },
-  );
-  return response.data;
 }
 
 export async function updateAttendanceStatus(input: {

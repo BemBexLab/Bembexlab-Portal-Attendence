@@ -3,7 +3,6 @@
 import {
   BarChart3,
   CalendarDays,
-  Fingerprint,
   LayoutDashboard,
   Menu,
   Rows3,
@@ -13,6 +12,7 @@ import {
   KeyRound,
   Inbox,
   WalletCards,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -25,7 +25,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { useRealtimeStore } from "@/stores/realtime-store";
 
 const navGroups = [
   {
@@ -59,7 +58,6 @@ const navGroups = [
   {
     label: "System",
     items: [
-      { href: "/devices", label: "Devices", icon: Fingerprint },
       { href: "/raw-data", label: "Raw punches", icon: Rows3 },
       { href: "/email-password", label: "Credentials", icon: KeyRound },
     ],
@@ -80,7 +78,21 @@ export function AppShell({ children, title, description }: AppShellProps) {
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const user = useAuthStore((state) => state.user);
-  const realtimeConnected = useRealtimeStore((state) => state.connected);
+
+  async function handleSignOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      for (const cookie of document.cookie.split(";")) {
+        const name = cookie.trim().split("=", 1)[0];
+        if (!name) continue;
+        document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`;
+      }
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.location.replace("/login");
+    }
+  }
 
   return (
     <ProtectedRoute>
@@ -154,7 +166,22 @@ export function AppShell({ children, title, description }: AppShellProps) {
               </div>
             ))}
           </nav>
-
+          <div className="border-t border-sidebar-border p-2">
+            <Button
+              aria-label="Sign out"
+              className={cn(
+                "w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300",
+                !sidebarOpen && "justify-center px-0",
+              )}
+              onClick={handleSignOut}
+              title="Sign out"
+              type="button"
+              variant="ghost"
+            >
+              <LogOut className="size-4 shrink-0" />
+              {sidebarOpen ? <span>Sign out</span> : null}
+            </Button>
+          </div>
         </aside>
 
         <div className={cn("md:pl-64", !sidebarOpen && "md:pl-16")}>
@@ -186,16 +213,6 @@ export function AppShell({ children, title, description }: AppShellProps) {
               </div>
 
               <div className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "hidden h-7 items-center rounded-md border px-2 text-xs font-medium sm:inline-flex",
-                    realtimeConnected
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-amber-200 bg-amber-50 text-amber-800",
-                  )}
-                >
-                  {realtimeConnected ? "Live" : "Syncing"}
-                </span>
                 <div className="min-w-0 text-right">
                   <p className="truncate text-sm font-medium">
                     {user?.name ?? "Operator"}

@@ -745,7 +745,7 @@ export default function EmployeesPage() {
 
   return (
     <AppShell
-      description="Employee roster mapped to biometric device users."
+      description="Employee roster stored in the VPS database."
       title="Employees"
     >
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -969,7 +969,7 @@ export default function EmployeesPage() {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      {employee.deviceUserId ?? "Not assigned"}
+                      {employee.employeeCode}
                     </td>
                     <td className="px-4 py-3 tabular-nums">
                       <span className="font-medium">{formatMoney(Number(employee.monthlySalary))}</span>
@@ -1094,7 +1094,7 @@ export default function EmployeesPage() {
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Employee ID {selectedEmployee.employeeCode} · Device {selectedEmployee.deviceUserId ?? "Not assigned"}
+                  Employee code {selectedEmployee.employeeCode}
                 </p>
               </div>
               <button

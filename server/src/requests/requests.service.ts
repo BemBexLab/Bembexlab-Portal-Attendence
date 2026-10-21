@@ -78,7 +78,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         ...(query.status ? { status: query.status as RequestStatus } : {}),
       },
       include: {
-        employee: { select: { employeeCode: true, deviceUserId: true, name: true } },
+        employee: { select: { employeeCode: true, name: true } },
       },
       orderBy: [{ status: 'asc' }, { submittedAt: 'desc' }],
     });
@@ -97,7 +97,6 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
               employee: {
                 select: {
                   employeeCode: true,
-                  deviceUserId: true,
                   name: true,
                 },
               },
@@ -115,7 +114,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
       id: record.id,
       source: 'EMPLOYEE_REQUEST' as const,
       employeeId: record.employeeId,
-      employeeCode: record.employee.deviceUserId ?? record.employee.employeeCode,
+      employeeCode: record.employee.employeeCode,
       employee: record.employee.name,
       kind: record.kind,
       complaintType: null,
@@ -141,8 +140,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         id: correction.id,
         source: 'ATTENDANCE_CORRECTION' as const,
         employeeId: correction.employeeId,
-        employeeCode:
-          correction.employee.deviceUserId ?? correction.employee.employeeCode,
+        employeeCode: correction.employee.employeeCode,
         employee: correction.employee.name,
         kind: RequestKind.CORRECTION,
         complaintType: correction.complaintType,

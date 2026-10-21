@@ -1,21 +1,16 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { RedisService } from '../redis/redis.service';
 
 @Controller('health')
 export class HealthController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly redis: RedisService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get()
   async check() {
     const checks = {
       api: 'ok',
       database: await this.checkDatabase(),
-      redis: await this.checkRedis(),
     };
     const healthy = Object.values(checks).every((status) => status === 'ok');
 
@@ -45,12 +40,4 @@ export class HealthController {
     }
   }
 
-  private async checkRedis() {
-    try {
-      const result = await this.redis.getClient().ping();
-      return result === 'PONG' ? 'ok' : 'error';
-    } catch {
-      return 'error';
-    }
-  }
 }

@@ -9,14 +9,11 @@ export type AttendanceStatus =
   | "HOLIDAY"
   | "REMOTE";
 
-export type DeviceStatus = "ACTIVE" | "OFFLINE" | "MAINTENANCE" | "INACTIVE";
-
 export type Employee = {
   id: string;
   employeeCode: string;
   name: string;
   department: string | null;
-  deviceUserId: string | null;
   isActive: boolean;
   monthlySalary: string;
   allowance: string;
@@ -216,58 +213,11 @@ export type RawPunch = {
   verificationType: string;
 };
 
-export type Device = {
-  id: string;
-  name: string;
-  ip: string;
-  port: number;
-  status: DeviceStatus;
-  lastSync: string | null;
-};
-
-export type DeviceInfoResponse = {
-  deviceId: string;
-  info: Record<string, unknown>;
-};
-
-export type DeviceSyncResult = {
-  fetched: number;
-  stored: number;
-  duplicates: number;
-  unmatched: number;
-  skipped: number;
-  dailyCalculated: number;
-  error?: string;
-};
-
-export type DirectDevicePunch = {
-  deviceId: string;
-  deviceName: string;
-  deviceIp: string;
-  devicePort: number;
-  deviceUserId: string;
-  employeeName: string | null;
-  punchTime: string;
-  verificationType: string;
-  raw: Record<string, unknown>;
-};
-
-export type DirectDeviceAttendanceResponse = {
-  source: string;
-  devices: Array<Pick<Device, "id" | "name" | "ip" | "port">>;
-  fetchedAt: string;
-  total: number;
-  errors: Array<{ deviceId: string; deviceName: string; error: string }>;
-  data: DirectDevicePunch[];
-};
-
 export type DashboardSummary = {
   totalEmployees: number;
   presentCount: number;
   absentCount: number;
   lateCount: number;
-  activeDevices: number;
-  offlineDevices: number;
 };
 
 export type DepartmentAttendance = {

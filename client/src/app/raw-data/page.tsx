@@ -89,7 +89,7 @@ export default function RawDataPage() {
 
   return (
     <AppShell
-      description="Every biometric punch received from connected devices."
+      description="Punch records currently stored in the VPS database."
       title="Raw Data"
     >
       <Panel>

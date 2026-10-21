@@ -37,11 +37,8 @@ const PRESENT_STATUSES = new Set<AttendanceStatus>([
   AttendanceStatus.REMOTE,
 ]);
 
-function displayEmployeeCode(employee: {
-  employeeCode: string;
-  deviceUserId: string | null;
-}) {
-  return employee.deviceUserId ?? employee.employeeCode;
+function displayEmployeeCode(employee: { employeeCode: string }) {
+  return employee.employeeCode;
 }
 
 type ReportScope = {
@@ -89,7 +86,6 @@ export class ReportsService {
           id: true,
           organizationId: true,
           employeeCode: true,
-          deviceUserId: true,
           name: true,
           attendanceTrackingSince: true,
           department: { select: { name: true } },
@@ -316,7 +312,6 @@ export class ReportsService {
           id: true,
           organizationId: true,
           employeeCode: true,
-          deviceUserId: true,
           name: true,
           attendanceTrackingSince: true,
           monthlySalary: true,
@@ -659,10 +654,7 @@ export class ReportsService {
 
     const rows = deductions.map((deduction) => ({
       employeeId: deduction.employeeId,
-      employeeCode: displayEmployeeCode({
-        employeeCode: deduction.employee.employeeCode,
-        deviceUserId: deduction.employee.deviceUserId,
-      }),
+      employeeCode: deduction.employee.employeeCode,
       employee: deduction.employee.name,
       department: deduction.employee.department?.name ?? 'Unassigned',
       payrollCycleMonth: deduction.payrollCycleMonth,
@@ -721,7 +713,6 @@ export class ReportsService {
         select: {
           id: true,
           employeeCode: true,
-          deviceUserId: true,
           name: true,
           attendanceTrackingSince: true,
           department: { select: { name: true } },
@@ -881,7 +872,6 @@ export class ReportsService {
         employee: {
           select: {
             employeeCode: true,
-            deviceUserId: true,
             name: true,
             department: { select: { name: true } },
           },
@@ -934,8 +924,7 @@ export class ReportsService {
         const punchKey = `${record.employeeId}:${record.punchTime.getTime()}`;
         return {
           id: record.id,
-          employeeCode:
-            record.employee.deviceUserId ?? record.employee.employeeCode,
+          employeeCode: record.employee.employeeCode,
           employee: record.employee.name,
           department: record.employee.department?.name ?? 'Unassigned',
           device:
@@ -1338,7 +1327,6 @@ export class ReportsService {
         employee: {
           select: {
             employeeCode: true,
-            deviceUserId: true,
             name: true,
             department: {
               select: { name: true },

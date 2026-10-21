@@ -92,10 +92,6 @@ export class UsersService {
 
     const findEmployees = () => this.prisma.employee.findMany({
       where: {
-        deviceUserId: { not: null },
-        // Device-removed employees remain hidden while their historical rows
-        // stay intact. Manually paused employees remain visible so an admin
-        // can activate them again from the employee directory.
         OR: [{ isActive: true }, { attendancePausedAt: { not: null } }],
         ...(user.role === UserRole.SUPER_ADMIN
           ? {}
@@ -129,10 +125,9 @@ export class UsersService {
 
     return employees.map((employee) => ({
       id: employee.id,
-      employeeCode: employee.deviceUserId ?? employee.employeeCode,
+      employeeCode: employee.employeeCode,
       name: employee.name,
       department: employee.department?.name ?? null,
-      deviceUserId: employee.deviceUserId,
       isActive: employee.isActive,
       monthlySalary: employee.monthlySalary.toString(),
       allowance: employee.allowance.toString(),
@@ -163,7 +158,6 @@ export class UsersService {
       select: {
         id: true,
         employeeCode: true,
-        deviceUserId: true,
         name: true,
         isActive: true,
         user: {
@@ -178,7 +172,7 @@ export class UsersService {
 
     return employees.map((employee) => ({
       employeeId: employee.id,
-      employeeCode: employee.deviceUserId ?? employee.employeeCode,
+      employeeCode: employee.employeeCode,
       name: employee.name,
       isActive: employee.isActive,
       email: employee.user?.email ?? null,
@@ -202,7 +196,6 @@ export class UsersService {
         id: true,
         organizationId: true,
         employeeCode: true,
-        deviceUserId: true,
         name: true,
         user: { select: { id: true } },
       },
@@ -259,7 +252,7 @@ export class UsersService {
 
       return {
         employeeId: employee.id,
-        employeeCode: employee.deviceUserId ?? employee.employeeCode,
+        employeeCode: employee.employeeCode,
         name: employee.name,
         email: account.email,
         hasPassword: true,
@@ -332,7 +325,6 @@ export class UsersService {
         where: {
           organizationId,
           isActive: true,
-          deviceUserId: { not: null },
           shiftAssignments: { none: {} },
         },
         select: { id: true },
@@ -388,7 +380,6 @@ export class UsersService {
       select: {
         id: true,
         employeeCode: true,
-        deviceUserId: true,
         name: true,
         isActive: true,
       },
@@ -413,7 +404,6 @@ export class UsersService {
           id: true,
           organizationId: true,
           employeeCode: true,
-          deviceUserId: true,
           name: true,
         },
       });
@@ -484,12 +474,12 @@ export class UsersService {
       return {
         sourceEmployee: {
           id: source.id,
-          employeeCode: source.deviceUserId ?? source.employeeCode,
+          employeeCode: source.employeeCode,
           name: source.name,
         },
         targetEmployee: {
           id: target.id,
-          employeeCode: target.deviceUserId ?? target.employeeCode,
+          employeeCode: target.employeeCode,
           name: target.name,
         },
         reassignedRawPunches: rawLogResult.count,
@@ -534,7 +524,6 @@ export class UsersService {
       select: {
         id: true,
         employeeCode: true,
-        deviceUserId: true,
         name: true,
         monthlySalary: true,
         allowance: true,
@@ -543,7 +532,7 @@ export class UsersService {
 
     return {
       ...updated,
-      employeeCode: updated.deviceUserId ?? updated.employeeCode,
+      employeeCode: updated.employeeCode,
       monthlySalary: updated.monthlySalary.toString(),
       allowance: updated.allowance.toString(),
     };
@@ -703,7 +692,7 @@ export class UsersService {
           : { organizationId: user.organizationId as string },
       include: {
         employee: {
-          select: { id: true, employeeCode: true, deviceUserId: true, name: true },
+          select: { id: true, employeeCode: true, name: true },
         },
       },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
@@ -712,7 +701,7 @@ export class UsersService {
       ...this.serializeLoan(loan),
       employee: {
         id: loan.employee.id,
-        employeeCode: loan.employee.deviceUserId ?? loan.employee.employeeCode,
+        employeeCode: loan.employee.employeeCode,
         name: loan.employee.name,
       },
     }));

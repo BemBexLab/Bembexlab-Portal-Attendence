@@ -6,13 +6,9 @@ import { AppService } from './app.service';
 import { AttendanceModule } from './attendance/attendance.module';
 import { validateEnvironment } from './config';
 import { DatabaseModule } from './database/database.module';
-import { DevicesModule } from './devices/devices.module';
 import { HealthModule } from './health/health.module';
-import { QueueModule } from './queue/queue.module';
-import { RedisModule } from './redis/redis.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
-import { WebsocketModule } from './websocket/websocket.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { RequestsModule } from './requests/requests.module';
 
@@ -24,12 +20,8 @@ import { RequestsModule } from './requests/requests.module';
       validate: validateEnvironment,
     }),
     DatabaseModule,
-    RedisModule,
-    QueueModule,
-    WebsocketModule,
     ShiftsModule,
     UsersModule,
-    DevicesModule,
     AttendanceModule,
     ReportsModule,
     HealthModule,

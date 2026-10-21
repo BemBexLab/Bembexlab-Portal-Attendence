@@ -1,6 +1,6 @@
 # Production Deployment
 
-Target: Linux VPS with Node.js, PM2, VPS-hosted PostgreSQL, and Redis.
+Target: Linux VPS with Node.js, PM2, and PostgreSQL.
 
 ## Server Requirements
 
@@ -8,10 +8,6 @@ Target: Linux VPS with Node.js, PM2, VPS-hosted PostgreSQL, and Redis.
 - npm
 - PM2: `npm install -g pm2`
 - PostgreSQL client tools for backups: `sudo apt install postgresql-client`
-- Redis reachable from the VPS
-- Network route from the API host to the ZKTeco K40 device
-
-The K40 IP `192.168.10.197` is private LAN space. A public VPS cannot reach it unless the VPS is on the same LAN, connected by VPN, or the device network exposes a secure route to TCP `4370`.
 
 ## Backend
 
@@ -23,7 +19,6 @@ npm ci
 npm run prisma:generate
 npm run build
 npm run db:check
-npm run prisma:seed
 ```
 
 Set both `DATABASE_URL` and `DIRECT_URL` to the VPS PostgreSQL connection string. The application does not use Supabase for runtime data or migrations.
@@ -41,7 +36,14 @@ Deploy `client/` from the GitHub repository with Vercel's Root Directory set to
 Production and Preview. It must be the public VPS API origin, for example
 `https://api.example.com`, without an `/api` suffix. Redeploy after setting it.
 
-The browser calls the same-origin `/api` and `/socket.io` paths; Next.js proxies
+Also set `PORTAL_PASSWORD` to the shared portal login password and
+`PORTAL_AUTH_SECRET` to a separate, long random signing key in both Vercel
+environments. Keep these values private. For local development, set the same
+two variables in the repository-root `.env`; choose your own portal password.
+Sessions are signed, HttpOnly cookies that expire after 12 hours. Changing
+`PORTAL_AUTH_SECRET` invalidates existing sessions.
+
+The browser calls the same-origin `/api` path; Next.js proxies
 those requests to the VPS using `API_URL`. The repository-root `.env` is for
 local development or VPS runtime only; it is Git-ignored and is not uploaded to
 Vercel.
@@ -94,23 +96,6 @@ The startup task runs `pm2 resurrect`, so it restores exactly the processes
 captured by `pm2 save`. Keep the project paths and PM2 installation available
 to the same Windows account that registered the task.
 
-## Redis
-
-Use a managed Redis or install Redis on the VPS:
-
-```bash
-sudo apt install redis-server
-sudo systemctl enable --now redis-server
-```
-
-For production prefer `REDIS_URL`:
-
-```env
-REDIS_URL="redis://default:password@host:6379"
-```
-
-BullMQ attendance workers use Redis, so `/api/health` should report Redis as `ok`.
-
 ## Database Backup
 
 Create backups with:
@@ -132,27 +117,3 @@ APP_DIR=/var/www/bembex-portal scripts/restore-database.sh /var/www/bembex-porta
 ```
 
 Keep encrypted off-server copies of VPS PostgreSQL backups. Application-owned exports are recommended before releases and migrations.
-
-## ZKTeco K40 Sync
-
-The seeded device is:
-
-```json
-{ "ip": "192.168.10.197", "port": 4370 }
-```
-
-The frontend Devices page now calls:
-
-- `POST /devices/:id/test`
-- `GET /devices/:id/info`
-- `POST /devices/:id/sync-attendance`
-
-`ZKTECO_LOCAL_PORT=0` lets the operating system choose a free UDP source port for each connection attempt. Set a fixed local port only if your network/firewall requires it.
-
-If sync fails from a VPS, check routing first:
-
-```bash
-nc -vz 192.168.10.197 4370
-```
-
-If the VPS is not on the K40 network, use a site-to-site VPN, Tailscale/WireGuard, or run the API on the same local network.

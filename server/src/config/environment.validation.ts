@@ -1,7 +1,5 @@
 type EnvironmentConfig = Record<string, string | undefined>;
 
-import { extractRedisUrl } from './redis-connection';
-
 type RequiredEnvironmentKey = 'DATABASE_URL' | 'PORT';
 
 function readRequired(config: EnvironmentConfig, key: RequiredEnvironmentKey) {
@@ -24,38 +22,6 @@ function readPort(config: EnvironmentConfig, key: RequiredEnvironmentKey) {
   return value;
 }
 
-function readOptionalNonNegativeInteger(
-  config: EnvironmentConfig,
-  key: string,
-  fallback: number,
-) {
-  const rawValue = config[key];
-
-  if (!rawValue || rawValue.trim().length === 0) {
-    return fallback;
-  }
-
-  const value = Number(rawValue);
-
-  if (!Number.isInteger(value) || value < 0) {
-    throw new Error(`${key} must be a non-negative integer`);
-  }
-
-  return value;
-}
-
-function validateZktecoProtocol(value?: string) {
-  if (!value || value.trim().length === 0) {
-    return 'auto';
-  }
-
-  if (!['auto', 'tcp', 'udp'].includes(value)) {
-    throw new Error('ZKTECO_PROTOCOL must be one of auto, tcp, udp');
-  }
-
-  return value;
-}
-
 function validatePostgresUrl(value: string, key: string) {
   if (!value.startsWith('postgresql://') && !value.startsWith('postgres://')) {
     throw new Error(
@@ -68,58 +34,6 @@ function validatePostgresUrl(value: string, key: string) {
   }
 
   return value;
-}
-
-function validateRedis(config: EnvironmentConfig) {
-  const redisUrl = config.REDIS_URL;
-
-  if (redisUrl && redisUrl.trim().length > 0) {
-    const normalizedUrl = extractRedisUrl(redisUrl);
-
-    if (!normalizedUrl) {
-      throw new Error('REDIS_URL must start with redis:// or rediss://');
-    }
-
-    const parsedUrl = new URL(normalizedUrl);
-
-    if (!['redis:', 'rediss:'].includes(parsedUrl.protocol)) {
-      throw new Error('REDIS_URL must start with redis:// or rediss://');
-    }
-
-    return {
-      REDIS_URL: normalizedUrl,
-    };
-  }
-
-  const redisHost = config.REDIS_HOST;
-  const redisHostUrl = redisHost ? extractRedisUrl(redisHost) : null;
-
-  if (redisHostUrl) {
-    const parsedUrl = new URL(redisHostUrl);
-
-    if (!['redis:', 'rediss:'].includes(parsedUrl.protocol)) {
-      throw new Error('Redis URL must start with redis:// or rediss://');
-    }
-
-    return {
-      REDIS_URL: redisHostUrl,
-    };
-  }
-
-  const redisPort = Number(config.REDIS_PORT);
-
-  if (!redisHost || redisHost.trim().length === 0) {
-    throw new Error('REDIS_HOST is required when REDIS_URL is not provided');
-  }
-
-  if (!Number.isInteger(redisPort) || redisPort <= 0) {
-    throw new Error('REDIS_PORT must be a positive integer');
-  }
-
-  return {
-    REDIS_HOST: redisHost,
-    REDIS_PORT: redisPort,
-  };
 }
 
 export function validateEnvironment(config: EnvironmentConfig) {
@@ -135,18 +49,6 @@ export function validateEnvironment(config: EnvironmentConfig) {
     NODE_ENV: config.NODE_ENV || 'development',
     CORS_ORIGIN: config.CORS_ORIGIN || '*',
     COOKIE_SECURE: config.COOKIE_SECURE,
-    ZKTECO_TIMEOUT_MS: readOptionalNonNegativeInteger(
-      config,
-      'ZKTECO_TIMEOUT_MS',
-      10000,
-    ),
-    ZKTECO_LOCAL_PORT: readOptionalNonNegativeInteger(
-      config,
-      'ZKTECO_LOCAL_PORT',
-      0,
-    ),
-    ZKTECO_PROTOCOL: validateZktecoProtocol(config.ZKTECO_PROTOCOL),
-    ...validateRedis(config),
     PORT: readPort(config, 'PORT'),
   };
 }

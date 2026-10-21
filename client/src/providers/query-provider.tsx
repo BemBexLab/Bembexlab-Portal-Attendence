@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-import { RealtimeProvider } from "./realtime-provider";
 import { GlobalDataLoader } from "@/components/ui/global-data-loader";
 
 type QueryProviderProps = {
@@ -31,10 +30,8 @@ export function QueryProvider({ children }: QueryProviderProps) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <RealtimeProvider>
-        {children}
-        <GlobalDataLoader />
-      </RealtimeProvider>
+      {children}
+      <GlobalDataLoader />
     </QueryClientProvider>
   );
 }
