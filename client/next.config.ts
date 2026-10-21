@@ -2,25 +2,17 @@ import type { NextConfig } from "next";
 import { loadEnvConfig } from "@next/env";
 import path from "node:path";
 
+const DEFAULT_API_URL = "http://203.161.44.35:4001";
+
 // Load the repository-level .env for Next config values in local development.
 // Auth code also loads this file in its request worker.
-loadEnvConfig(path.resolve(process.cwd(), ".."));
+loadEnvConfig(path.resolve(process.cwd(), ".."), undefined, undefined, true);
 
 const nextConfig: NextConfig = {
   devIndicators: false,
   async rewrites() {
     const configuredApiUrl = process.env.API_URL?.trim();
-
-    if (process.env.NODE_ENV === "production" && !configuredApiUrl) {
-      throw new Error(
-        "API_URL must be set to the public VPS API origin for production builds.",
-      );
-    }
-
-    const apiUrl = (configuredApiUrl || "http://localhost:4000").replace(
-      /\/$/,
-      "",
-    );
+    const apiUrl = (configuredApiUrl || DEFAULT_API_URL).replace(/\/$/, "");
 
     return [
       {

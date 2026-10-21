@@ -32,9 +32,9 @@ curl http://localhost:4000/api/health
 ## Frontend on Vercel
 
 Deploy `client/` from the GitHub repository with Vercel's Root Directory set to
-`client`. Add `API_URL` to the Vercel project environment variables for
-Production and Preview. It must be the public VPS API origin, for example
-`https://api.example.com`, without an `/api` suffix. Redeploy after setting it.
+`client`. The build defaults to the known VPS API origin
+`http://203.161.44.35:4001`. Set `API_URL` in Vercel for Production and Preview
+to override it; use the origin only, without an `/api` suffix.
 
 Also set `PORTAL_PASSWORD` to the shared portal login password and
 `PORTAL_AUTH_SECRET` to a separate, long random signing key in both Vercel
@@ -45,10 +45,10 @@ portal auth values in `client/.env.local` or `server/.env`.
 Sessions are signed, HttpOnly cookies that expire after 12 hours. Changing
 `PORTAL_AUTH_SECRET` invalidates existing sessions.
 
-The browser calls the same-origin `/api` path; Next.js proxies
-those requests to the VPS using `API_URL`. The repository-root `.env` is for
-local development or VPS runtime only; it is Git-ignored and is not uploaded to
-Vercel.
+The browser calls the same-origin `/api` path; Next.js proxies those requests
+to the VPS using `API_URL`. Locally, set `API_URL` once in the repository-root
+`.env`, which is shared by `client/` and `server/`. The root `.env` is
+Git-ignored and is not uploaded to Vercel.
 
 ## PM2
 
