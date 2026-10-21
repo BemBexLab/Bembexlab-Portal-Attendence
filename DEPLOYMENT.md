@@ -40,6 +40,8 @@ Also set `PORTAL_PASSWORD` to the shared portal login password and
 `PORTAL_AUTH_SECRET` to a separate, long random signing key in both Vercel
 environments. Keep these values private. For local development, set the same
 two variables in the repository-root `.env`; choose your own portal password.
+Both `client/` and `server/` load that root file locally, so do not duplicate
+portal auth values in `client/.env.local` or `server/.env`.
 Sessions are signed, HttpOnly cookies that expire after 12 hours. Changing
 `PORTAL_AUTH_SECRET` invalidates existing sessions.
 

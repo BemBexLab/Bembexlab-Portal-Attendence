@@ -16,6 +16,7 @@ import { RequestsModule } from './requests/requests.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // Resolve the repository-root .env from both src/ and compiled dist/.
       envFilePath: resolve(__dirname, '..', '..', '.env'),
       validate: validateEnvironment,
     }),

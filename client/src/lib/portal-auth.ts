@@ -1,4 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { loadEnvConfig } from "@next/env";
+import path from "node:path";
+
+// Next's request worker does not always inherit values loaded by next.config.ts.
+// Load the repository-root .env here so the proxy and auth handlers share it.
+loadEnvConfig(path.resolve(process.cwd(), ".."), undefined, undefined, true);
 
 export const PORTAL_SESSION_COOKIE = "bembex_portal_session";
 export const PORTAL_SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;

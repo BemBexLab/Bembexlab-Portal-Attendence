@@ -2,8 +2,8 @@ import type { NextConfig } from "next";
 import { loadEnvConfig } from "@next/env";
 import path from "node:path";
 
-// Load the repository-level .env for local development while keeping Vercel's
-// project environment variables as the production source.
+// Load the repository-level .env for Next config values in local development.
+// Auth code also loads this file in its request worker.
 loadEnvConfig(path.resolve(process.cwd(), ".."));
 
 const nextConfig: NextConfig = {
